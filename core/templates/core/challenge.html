@@ -9,29 +9,171 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'css/core.css' %}">
+    <link rel="icon" href="{% static 'img/favicon.png' %}" type="image/png">
 </head>
-<body>
-    <div class="page">
-        <header class="brand">
-            <span class="mark">SCAV</span>
-            <span class="accent">2026</span>
+<body class="layout" data-countdown-target="{{ countdown_target }}" data-show-countdown="{{ show_countdown|yesno:'true,false' }}">
+    <div class="page page--challenge">
+        <header class="site-nav">
+            <div class="site-nav__inner">
+            <div class="site-nav__left">
+                <div class="logo" aria-hidden="true">
+                    <img src="{% static 'img/favicon.png' %}" alt="" class="logo__image">
+                </div>
+                <div class="site-nav__title">
+                    <span class="title-main">Scavenger Hunt</span>
+                    <span class="title-sub">{{ now_year }}</span>
+                </div>
+            </div>
+            <div class="site-nav__center">
+                {% if show_countdown %}
+                    <span id="countdown" class="countdown">Loading…</span>
+                {% else %}
+                    <span class="countdown countdown--inactive">Countdown unavailable</span>
+                {% endif %}
+            </div>
+            <div class="site-nav__right">
+                <button id="theme-toggle" class="icon-button" type="button" aria-label="Toggle theme">
+                    <span class="icon-button__icon" data-theme-icon>☀️</span>
+                </button>
+                <div class="profile-menu">
+                    <button class="profile-menu__trigger" type="button" aria-haspopup="true" aria-expanded="false">
+                        <span class="profile-menu__avatar">{{ participant.display_name|first|default:participant.ion_username|first|upper }}</span>
+                        <span class="profile-menu__label">{{ participant.display_name|default:participant.ion_username }}</span>
+                    </button>
+                    <div class="profile-menu__popover" role="menu">
+                        <p>Profile actions coming soon.</p>
+                    </div>
+                </div>
+            </div>
+            </div>
         </header>
-        <main class="card">
-            <section class="card__header">
-                <h1>Challenge Hub</h1>
-                <p>Welcome back {{ participant.display_name|default:participant.ion_username }}. Your mission awaits.</p>
+
+        <main class="challenge-layout">
+            <section class="panel leaderboard-panel">
+                <header class="panel__header">
+                    <h2>Leaderboard</h2>
+                    <span class="panel__hint">Scores update in realtime once the hunt begins.</span>
+                </header>
+                <div class="leaderboard-grid">
+                    {% for entry in leaderboard %}
+                        <article class="leaderboard-card{% if entry.is_user_team %} leaderboard-card--highlight{% endif %}">
+                            <header>
+                                <span class="leaderboard-rank">#{{ entry.rank }}</span>
+                                <span class="leaderboard-team">{{ entry.label }}</span>
+                            </header>
+                            <div class="leaderboard-score">{{ entry.score }}</div>
+                            <footer>
+                                <span class="leaderboard-meta">Members: {{ entry.member_count }}</span>
+                                {% if entry.is_user_team %}<span class="leaderboard-meta leaderboard-meta--badge">Your team</span>{% endif %}
+                            </footer>
+                        </article>
+                    {% endfor %}
+                </div>
             </section>
-            <section class="card__content">
+
+            <section class="panel challenge-panel">
+                <header class="panel__header">
+                    <h2>Challenge Board</h2>
+                    <span class="panel__hint">We’re preparing missions for every class — check back soon.</span>
+                </header>
                 <div class="challenge-placeholder">
-                    <h2>Coming Soon</h2>
-                    <p>We’re putting the finishing touches on the full scavenger hunt experience. As soon as the event launches, you’ll find your team’s objectives here.</p>
-                    <p class="muted">Keep an eye out: the hunt runs {% if hunt_starts_at %}from <strong>{{ hunt_starts_at }}</strong>{% endif %}{% if hunt_ends_at %} to <strong>{{ hunt_ends_at }}</strong>{% endif %}.</p>
+                    <h3>Coming Soon</h3>
+                    <p>The scavenger hunt runs {% if hunt_starts_at %}from <strong>{{ hunt_starts_at }}</strong>{% endif %}{% if hunt_ends_at %} to <strong>{{ hunt_ends_at }}</strong>{% endif %}. We’ll unlock objectives here once the game begins.</p>
                 </div>
             </section>
         </main>
+
         <footer class="footer">
             <p>&copy; {% now "Y" %} SCAV 2026 · Crafted by students for students</p>
         </footer>
     </div>
+
+    <script>
+    (function () {
+        const STORAGE_KEY = "scav-theme";
+        const body = document.body;
+
+        function applyTheme(theme) {
+            body.dataset.theme = theme;
+            const icon = document.querySelector('[data-theme-icon]');
+            if (icon) {
+                icon.textContent = theme === 'dark' ? '🌙' : '☀️';
+            }
+        }
+
+        const savedTheme = localStorage.getItem(STORAGE_KEY);
+        if (savedTheme) {
+            applyTheme(savedTheme);
+        } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            applyTheme('dark');
+        } else {
+            applyTheme('light');
+        }
+
+        const toggle = document.getElementById('theme-toggle');
+        if (toggle) {
+            toggle.addEventListener('click', () => {
+                const next = body.dataset.theme === 'dark' ? 'light' : 'dark';
+                applyTheme(next);
+                localStorage.setItem(STORAGE_KEY, next);
+            });
+        }
+
+        const countdownEl = document.getElementById('countdown');
+        const showCountdown = body.dataset.showCountdown === 'true';
+        const targetIso = body.dataset.countdownTarget;
+
+        if (showCountdown && countdownEl && targetIso) {
+            const targetDate = new Date(targetIso);
+            const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'always' });
+
+            function pad(value) {
+                return String(value).padStart(2, '0');
+            }
+
+            function updateCountdown() {
+                const now = new Date();
+                const diff = targetDate.getTime() - now.getTime();
+                if (diff <= 0) {
+                    countdownEl.textContent = 'The hunt has ended';
+                    return;
+                }
+
+                const totalSeconds = Math.floor(diff / 1000);
+                const days = Math.floor(totalSeconds / 86400);
+                const hours = Math.floor((totalSeconds % 86400) / 3600);
+                const minutes = Math.floor((totalSeconds % 3600) / 60);
+                const seconds = totalSeconds % 60;
+
+                const parts = [];
+                if (days) {
+                    parts.push(formatter.format(days, 'day'));
+                }
+                parts.push(`${pad(hours)}:${pad(minutes)}:${pad(seconds)}`);
+                countdownEl.textContent = parts.join(' · ');
+            }
+
+            updateCountdown();
+            setInterval(updateCountdown, 1000);
+        }
+
+        const profileTrigger = document.querySelector('.profile-menu__trigger');
+        const profilePopover = document.querySelector('.profile-menu__popover');
+        if (profileTrigger && profilePopover) {
+            profileTrigger.addEventListener('click', () => {
+                const expanded = profileTrigger.getAttribute('aria-expanded') === 'true';
+                profileTrigger.setAttribute('aria-expanded', String(!expanded));
+                profilePopover.toggleAttribute('data-open');
+            });
+
+            document.addEventListener('click', (event) => {
+                if (!profilePopover.contains(event.target) && !profileTrigger.contains(event.target)) {
+                    profileTrigger.setAttribute('aria-expanded', 'false');
+                    profilePopover.removeAttribute('data-open');
+                }
+            });
+        }
+    })();
+    </script>
 </body>
 </html>

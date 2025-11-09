@@ -15,6 +15,7 @@ env = environ.Env(
     DJANGO_DEBUG=(bool, False),
     DJANGO_ALLOWED_HOSTS=(list, ["localhost", "127.0.0.1"]),
     ION_SCOPE=(list, ["read"]),
+    SCAV_HUNT_TEAM_YEARS=(list, []),
 )
 
 env_file = BASE_DIR / ".env"
@@ -60,6 +61,35 @@ def _read_hunt_datetime(setting_name: str) -> datetime | None:
 
 SCAV_HUNT_START = _read_hunt_datetime("SCAV_HUNT_START")
 SCAV_HUNT_END = _read_hunt_datetime("SCAV_HUNT_END")
+
+
+def _build_team_years() -> list[int]:
+    raw_years = env("SCAV_HUNT_TEAM_YEARS")
+    team_years: list[int] = []
+    for raw in raw_years:
+        if not raw:
+            continue
+        try:
+            team_years.append(int(raw))
+        except ValueError as exc:  # pragma: no cover - configuration error path
+            raise ImproperlyConfigured(
+                "SCAV_HUNT_TEAM_YEARS must contain comma-separated integers."
+            ) from exc
+
+    if team_years and len(team_years) != 4:
+        raise ImproperlyConfigured(
+            "SCAV_HUNT_TEAM_YEARS must define exactly four graduation years."
+        )
+
+    if not team_years:
+        reference_dt = SCAV_HUNT_END or datetime.now(tz=SCAV_HUNT_TZ)
+        reference_year = reference_dt.year
+        team_years = [reference_year - 3, reference_year - 2, reference_year - 1, reference_year]
+
+    return sorted(team_years)
+
+
+SCAV_HUNT_TEAM_YEARS = _build_team_years()
 
 
 # Application definition

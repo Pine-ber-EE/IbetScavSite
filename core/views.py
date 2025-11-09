@@ -4,6 +4,7 @@ from typing import Any
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
+from django.db.models import Count
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseRedirect
 from django.shortcuts import redirect, render
 from django.utils import formats, timezone
@@ -97,6 +98,52 @@ def _hunt_window_status() -> tuple[bool, str, str]:
         return False, "ended", message
 
     return True, "open", ""
+
+
+def _build_leaderboard(user_year: int | None) -> list[dict[str, Any]]:
+    team_years = settings.SCAV_HUNT_TEAM_YEARS
+    aggregates = (
+        Participant.objects.filter(graduation_year__in=team_years)
+        .values("graduation_year")
+        .annotate(member_count=Count("id"))
+    )
+    counts = {item["graduation_year"]: item["member_count"] for item in aggregates}
+
+    leaderboard = []
+    for year in team_years:
+        leaderboard.append(
+            {
+                "year": year,
+                "label": f"Class of {year}",
+                "score": 0,
+                "member_count": counts.get(year, 0),
+                "is_user_team": year == user_year,
+            }
+        )
+
+    # Placeholder ranking by score (descending), then year ascending
+    leaderboard.sort(key=lambda item: (-item["score"], item["year"]))
+    for idx, row in enumerate(leaderboard, start=1):
+        row["rank"] = idx
+    return leaderboard
+
+
+def _countdown_context(participant: Participant, is_open: bool) -> dict[str, Any]:
+    end = settings.SCAV_HUNT_END
+    if not end:
+        return {"show_countdown": False, "countdown_target": None}
+
+    end_est = end.astimezone(settings.SCAV_HUNT_TZ)
+    now_est = timezone.now().astimezone(settings.SCAV_HUNT_TZ)
+
+    # Countdown is hidden for admins outside the active window.
+    allow_for_admin = participant.is_admin and is_open
+    show_countdown = bool(is_open and (not participant.is_admin or allow_for_admin) and end_est > now_est)
+
+    return {
+        "show_countdown": show_countdown,
+        "countdown_target": end_est.isoformat(),
+    }
 
 
 def login_view(request):
@@ -223,7 +270,11 @@ def challenge_view(request):
         "hunt_message": message,
         "hunt_starts_at": _format_est(settings.SCAV_HUNT_START),
         "hunt_ends_at": _format_est(settings.SCAV_HUNT_END),
+        "leaderboard": _build_leaderboard(participant.graduation_year),
+        "now_year": timezone.now().astimezone(settings.SCAV_HUNT_TZ).year,
     }
+
+    base_context.update(_countdown_context(participant, is_open))
 
     if is_open or participant.is_admin:
         return render(request, "core/challenge.html", base_context)
