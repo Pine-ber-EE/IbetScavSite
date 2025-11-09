@@ -4,6 +4,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from uuid import uuid4
 
 from django.db import models
+from django.db.models import Max
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.utils.text import slugify
@@ -77,6 +78,10 @@ class Challenge(models.Model):
     title = models.CharField(max_length=200)
     slug = models.SlugField(max_length=220, unique=True, blank=True)
     description = models.TextField()
+    sort_order = models.PositiveIntegerField(
+        default=0,
+        help_text="Controls display order within the category (lower numbers appear first).",
+    )
     challenge_type = models.CharField(
         max_length=20,
         choices=ChallengeType.choices,
@@ -113,7 +118,7 @@ class Challenge(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["category", "title"]
+        ordering = ["category", "sort_order", "title"]
 
     def _generate_unique_slug(self) -> str:
         base_slug = slugify(self.title) or str(uuid4())

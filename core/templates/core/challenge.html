@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="{% static 'css/core.css' %}">
     <link rel="icon" href="{% static 'img/favicon.png' %}" type="image/png">
 </head>
-<body class="layout" data-countdown-target="{{ countdown_target }}" data-show-countdown="{{ show_countdown|yesno:'true,false' }}" data-participant-id="{{ participant.pk }}">
+<body class="layout" data-countdown-target="{{ countdown_target }}" data-show-countdown="{{ show_countdown|yesno:'true,false' }}" data-participant-id="{{ participant.pk }}" data-is-admin="{{ participant.is_admin|yesno:'true,false' }}">
     <script>
     (function () {
         const body = document.body;
@@ -158,7 +158,33 @@
                                     <div class="challenge-grid">
                                         {% for challenge in category.challenges %}
                                             {% with challenge.challenge_type as type_key %}
-                                                <article class="challenge-card{% if not challenge.can_submit %} challenge-card--locked{% endif %}{% if challenge.user_has_solved %} challenge-card--solved{% endif %}{% if challenge.is_exclusive %} challenge-card--exclusive{% endif %}" data-challenge-type="{{ type_key }}">
+                                                <article class="challenge-card{% if not challenge.can_submit %} challenge-card--locked{% endif %}{% if challenge.user_has_solved %} challenge-card--solved{% endif %}{% if challenge.is_exclusive %} challenge-card--exclusive{% endif %}{% if participant.is_admin %} challenge-card--admin{% endif %}" data-challenge-type="{{ type_key }}"{% if participant.is_admin %} data-admin-card="true" data-admin-url="{{ challenge.admin_url }}"{% endif %}>
+                                                    {% if participant.is_admin %}
+                                                        <div class="challenge-card__admin-actions" aria-label="Admin controls" data-admin-action="true">
+                                                            <form method="post" action="{{ challenge.move_left_url }}" class="challenge-card__admin-form" data-admin-action="true">
+                                                                {% csrf_token %}
+                                                                <button type="submit" class="challenge-card__admin-button" data-admin-action="true" {% if not challenge.can_move_left %}disabled aria-disabled="true"{% endif %}>
+                                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                                        <polyline points="15 18 9 12 15 6"></polyline>
+                                                                    </svg>
+                                                                    <span class="sr-only">Move left</span>
+                                                                </button>
+                                                            </form>
+                                                            <a href="{{ challenge.admin_url }}" class="challenge-card__admin-link" target="_blank" rel="noopener" data-admin-action="true">
+                                                                <span aria-hidden="true">✎</span>
+                                                                <span class="sr-only">Edit in admin</span>
+                                                            </a>
+                                                            <form method="post" action="{{ challenge.move_right_url }}" class="challenge-card__admin-form" data-admin-action="true">
+                                                                {% csrf_token %}
+                                                                <button type="submit" class="challenge-card__admin-button" data-admin-action="true" {% if not challenge.can_move_right %}disabled aria-disabled="true"{% endif %}>
+                                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                                        <polyline points="9 6 15 12 9 18"></polyline>
+                                                                    </svg>
+                                                                    <span class="sr-only">Move right</span>
+                                                                </button>
+                                                            </form>
+                                                        </div>
+                                                    {% endif %}
                                                     <header class="challenge-card__header">
                                                         <div>
                                                             <h4>{{ challenge.title }}</h4>

@@ -15,5 +15,10 @@ urlpatterns = [
         views.submit_challenge,
         name="submit_challenge",
     ),
+    path(
+        "challenge/<slug:challenge_slug>/move/<str:direction>/",
+        views.move_challenge,
+        name="move_challenge",
+    ),
     path("logout/", views.logout_view, name="logout"),
 ]

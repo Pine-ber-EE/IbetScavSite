@@ -13,6 +13,7 @@ from django.db import transaction
 from django.db.models import Count, Prefetch, Sum
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import formats, timezone
 from django.views.decorators.http import require_POST
 from requests_oauthlib import OAuth2Session
@@ -162,7 +163,7 @@ def _build_challenge_catalog(participant: Participant) -> dict[str, Any]:
             Prefetch("prerequisites", queryset=Challenge.objects.only("id", "title")),
             Prefetch("solves", queryset=ChallengeSolve.objects.select_related("participant")),
         )
-        .order_by("title"),
+        .order_by("sort_order", "title"),
     )
 
     categories = (
@@ -182,7 +183,9 @@ def _build_challenge_catalog(participant: Participant) -> dict[str, Any]:
 
     for category in categories:
         challenge_cards: list[dict[str, Any]] = []
-        for challenge in category.challenges.all():
+        category_challenges = list(category.challenges.all())
+        total_in_category = len(category_challenges)
+        for index, challenge in enumerate(category_challenges):
             solves = list(challenge.solves.all())
             total_solves = len(solves)
             user_has_solved = challenge.id in solved_ids_by_team
@@ -256,6 +259,12 @@ def _build_challenge_catalog(participant: Participant) -> dict[str, Any]:
                     "can_submit": can_submit,
                     "solves_count": total_solves,
                     "solves_summary": solves_summary,
+                    "sort_order": challenge.sort_order,
+                    "admin_url": reverse("admin:core_challenge_change", args=[challenge.pk]),
+                    "can_move_left": index > 0,
+                    "can_move_right": index < total_in_category - 1,
+                    "move_left_url": reverse("core:move_challenge", args=[challenge.slug, "left"]),
+                    "move_right_url": reverse("core:move_challenge", args=[challenge.slug, "right"]),
                 }
             )
 
@@ -628,3 +637,49 @@ def logout_view(request):
         request.session.pop(key, None)
 
     return redirect("core:login")
+
+
+@require_POST
+def move_challenge(request, challenge_slug: str, direction: str):
+    participant = _get_logged_in_participant(request)
+    if not participant or not participant.is_admin:
+        messages.error(request, "Admin privileges are required to reorder challenges.")
+        return redirect("core:challenge")
+
+    if direction not in {"left", "right"}:
+        return HttpResponseBadRequest("Invalid move direction.")
+
+    challenge = get_object_or_404(
+        Challenge.objects.select_related("category"),
+        slug=challenge_slug,
+    )
+
+    category = challenge.category
+    ordered = list(
+        Challenge.objects.filter(category=category)
+        .order_by("sort_order", "title", "pk")
+    )
+
+    try:
+        index = next(i for i, item in enumerate(ordered) if item.pk == challenge.pk)
+    except StopIteration:
+        messages.error(request, "Unable to locate that challenge for reordering.")
+        return redirect("core:challenge")
+
+    if direction == "left":
+        if index == 0:
+            messages.info(request, "This challenge is already at the start of the list.")
+            return redirect("core:challenge")
+        ordered[index - 1], ordered[index] = ordered[index], ordered[index - 1]
+    else:  # direction == "right"
+        if index == len(ordered) - 1:
+            messages.info(request, "This challenge is already at the end of the list.")
+            return redirect("core:challenge")
+        ordered[index + 1], ordered[index] = ordered[index], ordered[index + 1]
+
+    with transaction.atomic():
+        for position, item in enumerate(ordered, start=1):
+            if item.sort_order != position:
+                Challenge.objects.filter(pk=item.pk).update(sort_order=position)
+
+    return redirect("core:challenge")
