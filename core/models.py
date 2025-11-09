@@ -1,6 +1,12 @@
 """Database models for the Scavenger Hunt application."""
 
+from decimal import Decimal, ROUND_HALF_UP
+from uuid import uuid4
+
 from django.db import models
+from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
+from django.utils.text import slugify
 
 
 class Participant(models.Model):
@@ -20,3 +26,208 @@ class Participant(models.Model):
 
     def __str__(self) -> str:
         return self.display_name or self.ion_username
+
+
+class ChallengeCategory(models.Model):
+    """Groups challenges under a shared theme for easier navigation."""
+
+    name = models.CharField(max_length=120, unique=True)
+    slug = models.SlugField(max_length=150, unique=True, blank=True)
+    description = models.TextField(blank=True)
+    sort_order = models.PositiveIntegerField(default=0, help_text="Lower numbers appear first.")
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["sort_order", "name"]
+
+    def _generate_unique_slug(self) -> str:
+        base_slug = slugify(self.name) or str(uuid4())
+        slug_candidate = base_slug
+        index = 1
+        while ChallengeCategory.objects.filter(slug=slug_candidate).exclude(pk=self.pk).exists():
+            index += 1
+            slug_candidate = f"{base_slug}-{index}"
+        return slug_candidate
+
+    def save(self, *args, **kwargs):  # pragma: no cover - simple slug helper
+        if not self.slug:
+            self.slug = self._generate_unique_slug()
+        super().save(*args, **kwargs)
+
+    def __str__(self) -> str:  # pragma: no cover - trivial
+        return self.name
+
+
+class Challenge(models.Model):
+    """Represents a scavenger hunt challenge with configurable mechanics."""
+
+    class ChallengeType(models.TextChoices):
+        REGULAR = "regular", "Regular"
+        EXCLUSIVE = "exclusive", "Exclusive"
+        DECREASING = "decreasing", "Decreasing"
+        DEPENDENT = "dependent", "Dependent"
+
+    category = models.ForeignKey(
+        ChallengeCategory,
+        related_name="challenges",
+        on_delete=models.CASCADE,
+    )
+    title = models.CharField(max_length=200)
+    slug = models.SlugField(max_length=220, unique=True, blank=True)
+    description = models.TextField()
+    challenge_type = models.CharField(
+        max_length=20,
+        choices=ChallengeType.choices,
+        default=ChallengeType.REGULAR,
+    )
+    prerequisites = models.ManyToManyField(
+        "self",
+        symmetrical=False,
+        through="ChallengeDependency",
+        through_fields=("challenge", "prerequisite"),
+        related_name="unlocking_challenges",
+        blank=True,
+    )
+    base_points = models.PositiveIntegerField(default=100)
+    decay_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        validators=[MinValueValidator(Decimal("0")), MaxValueValidator(Decimal("100"))],
+        help_text="Percentage (0-100) deducted for remaining classes each time this challenge is solved.",
+    )
+    minimum_points = models.PositiveIntegerField(
+        default=0,
+        help_text="Floor value for decreasing challenges when decay is applied.",
+    )
+    answer = models.TextField(help_text="Exact answer string that must be submitted to award credit.")
+    answer_case_sensitive = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    allow_multiple_solves = models.BooleanField(
+        default=False,
+        help_text="Reserved for future modes; remains False so only one solve per class.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["category", "title"]
+
+    def _generate_unique_slug(self) -> str:
+        base_slug = slugify(self.title) or str(uuid4())
+        slug_candidate = base_slug
+        index = 1
+        while Challenge.objects.filter(slug=slug_candidate).exclude(pk=self.pk).exists():
+            index += 1
+            slug_candidate = f"{base_slug}-{index}"
+        return slug_candidate
+
+    def save(self, *args, **kwargs):  # pragma: no cover - simple slug helper
+        if not self.slug:
+            self.slug = self._generate_unique_slug()
+        super().save(*args, **kwargs)
+
+    def __str__(self) -> str:  # pragma: no cover - trivial
+        return self.title
+
+    def requires_dependencies(self) -> bool:
+        return self.challenge_type == self.ChallengeType.DEPENDENT
+
+    def is_exclusive(self) -> bool:
+        return self.challenge_type == self.ChallengeType.EXCLUSIVE
+
+    def is_decreasing(self) -> bool:
+        return self.challenge_type == self.ChallengeType.DECREASING
+
+    def clean(self):
+        if self.challenge_type != self.ChallengeType.DECREASING and self.decay_percent:
+            if self.decay_percent > 0:
+                raise ValidationError("Decay percentage applies only to decreasing challenges.")
+
+        if self.challenge_type == self.ChallengeType.DECREASING and self.decay_percent <= 0:
+            raise ValidationError("Decreasing challenges must specify a positive decay percentage.")
+
+        if self.minimum_points > self.base_points:
+            raise ValidationError("Minimum points cannot exceed base points.")
+
+    def points_for_next_solve(self, solves_count: int) -> int:
+        if self.is_decreasing():
+            multiplier = (Decimal("100") - self.decay_percent) / Decimal("100")
+            value = Decimal(self.base_points) * (multiplier ** solves_count)
+            quantized = value.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            return max(int(quantized), int(self.minimum_points))
+        return int(self.base_points)
+
+
+class ChallengeDependency(models.Model):
+    """Represents a prerequisite relationship between challenges."""
+
+    challenge = models.ForeignKey(
+        Challenge,
+        related_name="dependencies",
+        on_delete=models.CASCADE,
+    )
+    prerequisite = models.ForeignKey(
+        Challenge,
+        related_name="unlocking",
+        on_delete=models.CASCADE,
+    )
+
+    class Meta:
+        unique_together = ("challenge", "prerequisite")
+
+    def clean(self):
+        challenge = self.challenge
+        prerequisite = self.prerequisite
+
+        if not challenge or not prerequisite:
+            return
+
+        if challenge.pk and prerequisite.pk and challenge.pk == prerequisite.pk:
+            raise ValidationError("A challenge cannot depend on itself.")
+
+        challenge_category_id = getattr(challenge, "category_id", None)
+        prerequisite_category_id = getattr(prerequisite, "category_id", None)
+        if (
+            challenge_category_id is not None
+            and prerequisite_category_id is not None
+            and challenge_category_id != prerequisite_category_id
+        ):
+            raise ValidationError("Dependencies must be within the same category.")
+
+        if challenge.pk and prerequisite.pk:
+            if ChallengeDependency.objects.filter(
+                challenge=prerequisite, prerequisite=challenge
+            ).exists():
+                raise ValidationError("Circular dependency detected between challenges.")
+
+    def __str__(self) -> str:  # pragma: no cover - trivial
+        return f"{self.challenge} depends on {self.prerequisite}"
+
+
+class ChallengeSolve(models.Model):
+    """Tracks a successful solve for a given class year, awarding points."""
+
+    challenge = models.ForeignKey(
+        Challenge,
+        related_name="solves",
+        on_delete=models.CASCADE,
+    )
+    participant = models.ForeignKey(
+        Participant,
+        related_name="challenge_solves",
+        on_delete=models.CASCADE,
+    )
+    team_year = models.PositiveIntegerField(help_text="Graduation year representing the solving class.")
+    awarded_points = models.IntegerField()
+    submitted_answer = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("challenge", "team_year")
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:  # pragma: no cover - trivial
+        return f"{self.challenge} solved by {self.team_year} for {self.awarded_points}"

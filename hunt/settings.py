@@ -16,6 +16,7 @@ env = environ.Env(
     DJANGO_ALLOWED_HOSTS=(list, ["localhost", "127.0.0.1"]),
     ION_SCOPE=(list, ["read"]),
     SCAV_HUNT_TEAM_YEARS=(list, []),
+    SCAV_SUBMISSION_COOLDOWN_SECONDS=(int, 3),
 )
 
 env_file = BASE_DIR / ".env"
@@ -90,6 +91,10 @@ def _build_team_years() -> list[int]:
 
 
 SCAV_HUNT_TEAM_YEARS = _build_team_years()
+
+
+# Challenge submission rate limit (seconds between attempts)
+SCAV_SUBMISSION_COOLDOWN_SECONDS = env("SCAV_SUBMISSION_COOLDOWN_SECONDS")
 
 
 # Application definition

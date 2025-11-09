@@ -1,22 +1,29 @@
 """Views for the Scavenger Hunt core app."""
 
+from collections import defaultdict
+from datetime import timedelta
+from math import ceil
 from typing import Any
 
 from django.conf import settings
+from django.contrib import messages
+from django.contrib.auth import get_user_model, login as auth_login, logout as auth_logout
 from django.core.exceptions import ImproperlyConfigured
-from django.db.models import Count
+from django.db import transaction
+from django.db.models import Count, Prefetch, Sum
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseRedirect
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import formats, timezone
 from django.views.decorators.http import require_POST
 from requests_oauthlib import OAuth2Session
 
-from .models import Participant
+from .models import Challenge, ChallengeCategory, ChallengeSolve, Participant
 
 
 SESSION_STATE_KEY = "ion_oauth_state"
 SESSION_TOKEN_KEY = "ion_oauth_token"
 SESSION_PARTICIPANT_KEY = "ion_participant_id"
+SESSION_SUBMISSION_KEY_PREFIX = "challenge_last_submission_at"
 
 
 def _missing_oauth_settings(require_secret: bool = False) -> list[str]:
@@ -103,30 +110,171 @@ def _hunt_window_status() -> tuple[bool, str, str]:
 
 def _build_leaderboard(user_year: int | None) -> list[dict[str, Any]]:
     team_years = settings.SCAV_HUNT_TEAM_YEARS
-    aggregates = (
+
+    member_aggregates = (
         Participant.objects.filter(graduation_year__in=team_years)
         .values("graduation_year")
         .annotate(member_count=Count("id"))
     )
-    counts = {item["graduation_year"]: item["member_count"] for item in aggregates}
+    member_counts = {item["graduation_year"]: item["member_count"] for item in member_aggregates}
 
-    leaderboard = []
+    score_aggregates = (
+        ChallengeSolve.objects.filter(team_year__in=team_years)
+        .values("team_year")
+        .annotate(total_points=Sum("awarded_points"))
+    )
+    scores = {item["team_year"]: item["total_points"] or 0 for item in score_aggregates}
+
+    leaderboard: list[dict[str, Any]] = []
     for year in team_years:
         leaderboard.append(
             {
                 "year": year,
                 "label": f"Class of {year}",
-                "score": 0,
-                "member_count": counts.get(year, 0),
+                "score": int(scores.get(year, 0) or 0),
+                "member_count": member_counts.get(year, 0),
                 "is_user_team": year == user_year,
             }
         )
 
-    # Placeholder ranking by score (descending), then year ascending
     leaderboard.sort(key=lambda item: (-item["score"], item["year"]))
-    for idx, row in enumerate(leaderboard, start=1):
-        row["rank"] = idx
+    last_score = None
+    current_rank = 0
+    for position, row in enumerate(leaderboard, start=1):
+        if row["score"] != last_score:
+            current_rank = position
+            last_score = row["score"]
+        row["rank"] = current_rank
     return leaderboard
+
+
+def _build_challenge_catalog(participant: Participant) -> dict[str, Any]:
+    team_year = participant.graduation_year
+    team_years = set(settings.SCAV_HUNT_TEAM_YEARS)
+    team_year_valid = team_year in team_years if team_year is not None else False
+
+    challenge_prefetch = Prefetch(
+        "challenges",
+        queryset=
+        Challenge.objects.filter(is_active=True)
+        .select_related("category")
+        .prefetch_related(
+            Prefetch("prerequisites", queryset=Challenge.objects.only("id", "title")),
+            Prefetch("solves", queryset=ChallengeSolve.objects.select_related("participant")),
+        )
+        .order_by("title"),
+    )
+
+    categories = (
+        ChallengeCategory.objects.filter(is_active=True)
+        .order_by("sort_order", "name")
+        .prefetch_related(challenge_prefetch)
+    )
+
+    categories_payload: list[dict[str, Any]] = []
+    solved_ids_by_team: set[int] = set()
+    awarded_points_for_team: dict[int, int] = {}
+
+    if team_year_valid:
+        team_solves = ChallengeSolve.objects.filter(team_year=team_year)
+        solved_ids_by_team = {solve.challenge_id for solve in team_solves}
+        awarded_points_for_team = {solve.challenge_id: solve.awarded_points for solve in team_solves}
+
+    for category in categories:
+        challenge_cards: list[dict[str, Any]] = []
+        for challenge in category.challenges.all():
+            solves = list(challenge.solves.all())
+            total_solves = len(solves)
+            user_has_solved = challenge.id in solved_ids_by_team
+            prerequisites = list(challenge.prerequisites.all())
+
+            prerequisites_met = True
+            prerequisite_entries: list[dict[str, Any]] = []
+            if prerequisites:
+                for prereq in prerequisites:
+                    met = True
+                    if challenge.requires_dependencies():
+                        if not team_year_valid:
+                            met = False
+                            prerequisites_met = False
+                        else:
+                            met = prereq.id in solved_ids_by_team
+                            if not met:
+                                prerequisites_met = False
+                    prerequisite_entries.append({"title": prereq.title, "met": met})
+            elif challenge.requires_dependencies():
+                prerequisites_met = True  # No prerequisites defined means nothing blocks submission
+
+            exclusive_locked = False
+            if challenge.is_exclusive():
+                exclusive_locked = total_solves > 0 and not user_has_solved
+
+            can_submit = (
+                team_year_valid
+                and not user_has_solved
+                and not exclusive_locked
+                and (not challenge.requires_dependencies() or prerequisites_met)
+            )
+
+            current_points = (
+                awarded_points_for_team.get(challenge.id)
+                if user_has_solved
+                else challenge.points_for_next_solve(total_solves)
+            )
+
+            solves_summary = sorted(
+                (
+                    {
+                        "team_year": solve.team_year,
+                        "awarded_points": solve.awarded_points,
+                        "by_user_team": team_year_valid and solve.team_year == team_year,
+                    }
+                    for solve in solves
+                ),
+                key=lambda entry: (-entry["awarded_points"], entry["team_year"]),
+            )
+
+            challenge_cards.append(
+                {
+                    "id": challenge.id,
+                    "slug": challenge.slug,
+                    "title": challenge.title,
+                    "description": challenge.description,
+                    "challenge_type": challenge.challenge_type,
+                    "type_label": challenge.get_challenge_type_display(),
+                    "base_points": challenge.base_points,
+                    "current_points": current_points,
+                    "has_decay": challenge.is_decreasing(),
+                    "decay_percent": float(challenge.decay_percent),
+                    "minimum_points": challenge.minimum_points,
+                    "is_exclusive": challenge.is_exclusive(),
+                    "requires_dependencies": challenge.requires_dependencies(),
+                    "prerequisites": prerequisite_entries,
+                    "exclusive_locked": exclusive_locked,
+                    "prerequisites_met": prerequisites_met,
+                    "user_has_solved": user_has_solved,
+                    "can_submit": can_submit,
+                    "solves_count": total_solves,
+                    "solves_summary": solves_summary,
+                }
+            )
+
+        categories_payload.append(
+            {
+                "id": category.id,
+                "name": category.name,
+                "slug": category.slug,
+                "description": category.description,
+                "challenges": challenge_cards,
+            }
+        )
+
+    return {
+        "categories": categories_payload,
+        "team_year": team_year if team_year_valid else None,
+        "team_label": f"Class of {team_year}" if team_year_valid else None,
+        "team_year_valid": team_year_valid,
+    }
 
 
 def _countdown_context(participant: Participant, is_open: bool) -> dict[str, Any]:
@@ -227,18 +375,84 @@ def oauth_callback(request):
 
     display_name = _build_display_name(profile_data) or ion_username
 
-    participant, _created = Participant.objects.update_or_create(
+    profile_email = profile_data.get("tj_email") or profile_data.get("email", "")
+    profile_grad_year = _extract_graduation_year(profile_data)
+    profile_is_admin = _extract_is_admin(profile_data)
+
+    participant, created_participant = Participant.objects.get_or_create(
         ion_username=ion_username,
         defaults={
             "display_name": display_name,
-            "email": profile_data.get("tj_email") or profile_data.get("email", ""),
-            "graduation_year": _extract_graduation_year(profile_data),
-            "is_admin": _extract_is_admin(profile_data),
+            "email": profile_email,
+            "graduation_year": profile_grad_year,
+            "is_admin": profile_is_admin,
             "last_login": timezone.now(),
         },
     )
 
+    if not created_participant:
+        participant_updates: list[str] = []
+
+        if participant.display_name != display_name:
+            participant.display_name = display_name
+            participant_updates.append("display_name")
+
+        if participant.email != profile_email:
+            participant.email = profile_email
+            participant_updates.append("email")
+
+        if participant.graduation_year != profile_grad_year:
+            participant.graduation_year = profile_grad_year
+            participant_updates.append("graduation_year")
+
+        if profile_is_admin and not participant.is_admin:
+            participant.is_admin = True
+            participant_updates.append("is_admin")
+
+        participant.last_login = timezone.now()
+        participant_updates.append("last_login")
+
+        if participant_updates:
+            participant.save(update_fields=list(set(participant_updates)))
+
     request.session[SESSION_PARTICIPANT_KEY] = participant.pk
+
+    user_model = get_user_model()
+    user_defaults = {
+        "email": participant.email,
+        "first_name": profile_data.get("first_name", ""),
+        "last_name": profile_data.get("last_name", ""),
+    }
+    user, created_user = user_model.objects.get_or_create(
+        username=ion_username,
+        defaults=user_defaults,
+    )
+
+    desired_is_staff = participant.is_admin
+    desired_is_superuser = participant.is_admin
+
+    updated_fields = []
+    for field, desired_value in user_defaults.items():
+        if getattr(user, field, "") != (desired_value or ""):
+            setattr(user, field, desired_value or "")
+            updated_fields.append(field)
+
+    if user.is_staff != desired_is_staff:
+        user.is_staff = desired_is_staff
+        updated_fields.append("is_staff")
+
+    if user.is_superuser != desired_is_superuser:
+        user.is_superuser = desired_is_superuser
+        updated_fields.append("is_superuser")
+
+    if created_user and not user.has_usable_password():
+        user.set_unusable_password()
+        updated_fields.append("password")
+
+    if updated_fields:
+        user.save(update_fields=list(set(updated_fields)))
+
+    auth_login(request, user, backend="django.contrib.auth.backends.ModelBackend")
 
     return redirect("core:challenge")
 
@@ -265,6 +479,8 @@ def challenge_view(request):
 
     is_open, state, message = _hunt_window_status()
 
+    challenge_catalog = _build_challenge_catalog(participant)
+
     base_context = {
         "participant": participant,
         "hunt_state": state,
@@ -273,6 +489,7 @@ def challenge_view(request):
         "hunt_ends_at": _format_est(settings.SCAV_HUNT_END),
         "leaderboard": _build_leaderboard(participant.graduation_year),
         "now_year": timezone.now().astimezone(settings.SCAV_HUNT_TZ).year,
+        "challenge_catalog": challenge_catalog,
     }
 
     base_context.update(_countdown_context(participant, is_open))
@@ -284,9 +501,129 @@ def challenge_view(request):
 
 
 @require_POST
+def submit_challenge(request, challenge_slug: str):
+    participant = _get_logged_in_participant(request)
+    if not participant:
+        return redirect("core:login")
+
+    team_year = participant.graduation_year
+    team_years = set(settings.SCAV_HUNT_TEAM_YEARS)
+
+    if team_year is None or team_year not in team_years:
+        messages.error(
+            request,
+            "You do not have an assigned class year for the scavenger hunt. "
+            "Please contact an organizer to be added to a team.",
+        )
+        return redirect("core:challenge")
+
+    cooldown_seconds = getattr(settings, "SCAV_SUBMISSION_COOLDOWN_SECONDS", 0)
+    submission_session_key = f"{SESSION_SUBMISSION_KEY_PREFIX}:{participant.pk}"
+    if cooldown_seconds > 0:
+        last_attempt_raw = request.session.get(submission_session_key)
+        if last_attempt_raw:
+            try:
+                last_attempt = timezone.datetime.fromisoformat(last_attempt_raw)
+            except ValueError:
+                last_attempt = None
+            if last_attempt is not None:
+                if timezone.is_naive(last_attempt):
+                    last_attempt = last_attempt.replace(tzinfo=timezone.utc)
+                next_allowed = last_attempt + timedelta(seconds=cooldown_seconds)
+                now = timezone.now()
+                if now < next_allowed:
+                    remaining_seconds = max(1, ceil((next_allowed - now).total_seconds()))
+                    messages.error(
+                        request,
+                        "Please wait {seconds} more second{plural} before submitting another answer.".format(
+                            seconds=remaining_seconds,
+                            plural="s" if remaining_seconds != 1 else "",
+                        ),
+                    )
+                    return redirect("core:challenge")
+
+    submitted_answer = (request.POST.get("answer") or "").strip()
+    if not submitted_answer:
+        messages.error(request, "Please enter an answer before submitting.")
+        return redirect("core:challenge")
+
+    with transaction.atomic():
+        challenge = get_object_or_404(
+            Challenge.objects.select_for_update()
+            .select_related("category")
+            .prefetch_related("prerequisites"),
+            slug=challenge_slug,
+            is_active=True,
+            category__is_active=True,
+        )
+
+        existing_team_solve = ChallengeSolve.objects.filter(
+            challenge=challenge, team_year=team_year
+        ).first()
+        if existing_team_solve:
+            messages.info(
+                request,
+                "Your class has already solved this challenge and earned "
+                f"{existing_team_solve.awarded_points} points.",
+            )
+            return redirect("core:challenge")
+
+        if challenge.is_exclusive():
+            if ChallengeSolve.objects.filter(challenge=challenge).exists():
+                messages.error(
+                    request,
+                    "This exclusive challenge has already been claimed by another class.",
+                )
+                return redirect("core:challenge")
+
+        if challenge.requires_dependencies():
+            prerequisites = challenge.prerequisites.all()
+            unmet = prerequisites.exclude(solves__team_year=team_year)
+            if unmet.exists():
+                messages.error(
+                    request,
+                    "You must solve all prerequisite challenges before attempting this one.",
+                )
+                return redirect("core:challenge")
+
+        if cooldown_seconds > 0:
+            request.session[submission_session_key] = timezone.now().isoformat()
+
+        expected_answer = challenge.answer
+        answers_match = False
+        if challenge.answer_case_sensitive:
+            answers_match = submitted_answer == expected_answer
+        else:
+            answers_match = submitted_answer.casefold() == expected_answer.strip().casefold()
+
+        if not answers_match:
+            messages.error(request, "Sorry, that answer is not correct. Try again!")
+            return redirect("core:challenge")
+
+        solves_count = ChallengeSolve.objects.filter(challenge=challenge).count()
+        awarded_points = challenge.points_for_next_solve(solves_count)
+
+        ChallengeSolve.objects.create(
+            challenge=challenge,
+            participant=participant,
+            team_year=team_year,
+            awarded_points=awarded_points,
+            submitted_answer=submitted_answer,
+        )
+
+        messages.success(
+            request,
+            f"Challenge solved! {awarded_points} points awarded to the Class of {team_year}.",
+        )
+
+    return redirect("core:challenge")
+
+
+@require_POST
 def logout_view(request):
     """Clear OAuth-related session data and send the user back to login."""
 
+    auth_logout(request)
     for key in [SESSION_STATE_KEY, SESSION_TOKEN_KEY, SESSION_PARTICIPANT_KEY]:
         request.session.pop(key, None)
 

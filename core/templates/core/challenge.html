@@ -12,6 +12,48 @@
     <link rel="icon" href="{% static 'img/favicon.png' %}" type="image/png">
 </head>
 <body class="layout" data-countdown-target="{{ countdown_target }}" data-show-countdown="{{ show_countdown|yesno:'true,false' }}" data-participant-id="{{ participant.pk }}">
+    <script>
+    (function () {
+        const body = document.body;
+        const TERMS_STORAGE_PREFIX = 'scav-terms';
+        const participantId = body.dataset.participantId || 'anonymous';
+        const termsStorageKey = `${TERMS_STORAGE_PREFIX}:${participantId}`;
+        let hasAccepted = false;
+
+        try {
+            hasAccepted = localStorage.getItem(termsStorageKey) === 'true';
+        } catch (error) {
+            /* ignore storage errors */
+        }
+
+        if (!hasAccepted) {
+            try {
+                hasAccepted = sessionStorage.getItem(termsStorageKey) === 'true';
+            } catch (error) {
+                /* ignore storage errors */
+            }
+        }
+
+        if (hasAccepted) {
+            body.dataset.termsAccepted = 'true';
+            const overlay = document.querySelector('[data-terms-overlay]');
+            if (overlay) {
+                overlay.setAttribute('hidden', '');
+                overlay.dataset.skipAnimation = 'true';
+            }
+        }
+    })();
+    </script>
+    <div class="toast-container" data-toast-container aria-live="polite" aria-atomic="true"{% if not messages %} hidden{% endif %}>
+        {% if messages %}
+            {% for message in messages %}
+                <div class="toast toast--{{ message.tags|default:'info' }}" data-toast>
+                    <div class="toast__content">{{ message }}</div>
+                    <button type="button" class="toast__close" data-toast-close aria-label="Dismiss notification">&times;</button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    </div>
     <div class="page page--challenge">
         <header class="site-nav">
             <div class="site-nav__inner">
@@ -42,10 +84,15 @@
                     </button>
                     <div class="profile-menu__popover" role="menu">
                         <p class="profile-menu__hint">Signed in as <strong>{{ participant.display_name|default:participant.ion_username }}</strong></p>
-                        <form method="post" action="{% url 'core:logout' %}" class="profile-menu__actions">
-                            {% csrf_token %}
-                            <button type="submit" class="profile-menu__button">Log out</button>
-                        </form>
+                        <div class="profile-menu__actions">
+                            {% if participant.is_admin %}
+                                <a href="{% url 'admin:index' %}" class="profile-menu__button">Admin dashboard</a>
+                            {% endif %}
+                            <form method="post" action="{% url 'core:logout' %}" class="profile-menu__logout">
+                                {% csrf_token %}
+                                <button type="submit" class="profile-menu__button">Log out</button>
+                            </form>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -53,6 +100,7 @@
         </header>
 
         <main class="challenge-layout">
+
             <section class="panel leaderboard-panel">
                 <header class="panel__header">
                     <h2>Leaderboard</h2>
@@ -78,12 +126,104 @@
             <section class="panel challenge-panel">
                 <header class="panel__header">
                     <h2>Challenge Board</h2>
-                    <span class="panel__hint">We’re preparing missions for every class — check back soon.</span>
+                    {% if challenge_catalog.team_label %}
+                        <span class="panel__hint">You’re representing <strong>{{ challenge_catalog.team_label }}</strong>. Submit solves to earn points for your class.</span>
+                    {% else %}
+                        <span class="panel__hint">Once your class year is assigned you can begin submitting answers.</span>
+                    {% endif %}
                 </header>
-                <div class="challenge-placeholder">
-                    <h3>Coming Soon</h3>
-                    <p>The scavenger hunt runs {% if hunt_starts_at %}from <strong>{{ hunt_starts_at }}</strong>{% endif %}{% if hunt_ends_at %} to <strong>{{ hunt_ends_at }}</strong>{% endif %}. We’ll unlock objectives here once the game begins.</p>
-                </div>
+                {% if challenge_catalog.categories %}
+                    <div class="challenge-categories">
+                        {% for category in challenge_catalog.categories %}
+                            <section class="challenge-category" id="category-{{ category.slug }}">
+                                <header class="challenge-category__header">
+                                    <h3>{{ category.name }}</h3>
+                                    {% if category.description %}
+                                        <p class="challenge-category__description">{{ category.description }}</p>
+                                    {% endif %}
+                                </header>
+                                {% if category.challenges %}
+                                    <div class="challenge-grid">
+                                        {% for challenge in category.challenges %}
+                                            {% with challenge.challenge_type as type_key %}
+                                                <article class="challenge-card{% if not challenge.can_submit %} challenge-card--locked{% endif %}{% if challenge.user_has_solved %} challenge-card--solved{% endif %}{% if challenge.is_exclusive %} challenge-card--exclusive{% endif %}" data-challenge-type="{{ type_key }}">
+                                                    <header class="challenge-card__header">
+                                                        <div>
+                                                            <h4>{{ challenge.title }}</h4>
+                                                            <div class="challenge-card__meta">
+                                                                <span class="challenge-card__badge challenge-card__badge--{{ type_key }}">{{ challenge.type_label }}</span>
+                                                                <span class="challenge-card__points">{{ challenge.current_points }} pts</span>
+                                                            </div>
+                                                        </div>
+                                                    </header>
+                                                    <p class="challenge-card__description">{{ challenge.description }}</p>
+
+                                                    {% if challenge.prerequisites %}
+                                                        <div class="challenge-card__prereqs">
+                                                            <p class="challenge-card__prereqs-label">Required before attempting:</p>
+                                                            <ul>
+                                                                {% for prereq in challenge.prerequisites %}
+                                                                    <li class="{% if prereq.met %}challenge-card__prereq--met{% else %}challenge-card__prereq--unmet{% endif %}">
+                                                                        {{ prereq.title }}
+                                                                    </li>
+                                                                {% endfor %}
+                                                            </ul>
+                                                        </div>
+                                                    {% endif %}
+
+                                                    {% if challenge.solves_summary %}
+                                                        <div class="challenge-card__solves">
+                                                            <p class="challenge-card__solves-label">Recent solves:</p>
+                                                            <ul>
+                                                                {% for entry in challenge.solves_summary %}
+                                                                    <li class="{% if entry.by_user_team %}challenge-card__solve--team{% endif %}">Class of {{ entry.team_year }} · {{ entry.awarded_points }} pts</li>
+                                                                {% endfor %}
+                                                            </ul>
+                                                        </div>
+                                                    {% endif %}
+
+                                                    <div class="challenge-card__actions">
+                                                        {% if challenge.can_submit %}
+                                                            <form method="post" action="{% url 'core:submit_challenge' challenge.slug %}" class="challenge-card__form">
+                                                                {% csrf_token %}
+                                                                <label class="challenge-card__form-label" for="answer-{{ challenge.slug }}">Your answer</label>
+                                                                <div class="challenge-card__form-row">
+                                                                    <input id="answer-{{ challenge.slug }}" name="answer" class="challenge-card__input" type="text" autocomplete="off" required>
+                                                                    <button type="submit" class="challenge-card__submit">Submit</button>
+                                                                </div>
+                                                            </form>
+                                                        {% else %}
+                                                            <div class="challenge-card__status">
+                                                                {% if challenge.user_has_solved %}
+                                                                    <p class="challenge-card__status-line">Already solved by your class for {{ challenge.current_points }} pts.</p>
+                                                                {% elif challenge.exclusive_locked %}
+                                                                    <p class="challenge-card__status-line">This exclusive challenge has already been claimed.</p>
+                                                                {% elif challenge.requires_dependencies and not challenge.prerequisites_met %}
+                                                                    <p class="challenge-card__status-line">Solve all prerequisites in this category to unlock.</p>
+                                                                {% elif not challenge_catalog.team_year_valid %}
+                                                                    <p class="challenge-card__status-line">Assignments pending — you’ll be able to attempt once a class year is set.</p>
+                                                                {% else %}
+                                                                    <p class="challenge-card__status-line">Unable to submit at this time.</p>
+                                                                {% endif %}
+                                                            </div>
+                                                        {% endif %}
+                                                    </div>
+                                                </article>
+                                            {% endwith %}
+                                        {% endfor %}
+                                    </div>
+                                {% else %}
+                                    <p class="challenge-category__empty">No challenges have been published for this category yet.</p>
+                                {% endif %}
+                            </section>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="challenge-placeholder">
+                        <h3>Challenges coming soon</h3>
+                        <p>The scavenger hunt runs {% if hunt_starts_at %}from <strong>{{ hunt_starts_at }}</strong>{% endif %}{% if hunt_ends_at %} to <strong>{{ hunt_ends_at }}</strong>{% endif %}. Organizers will publish categories and challenges here once they are ready.</p>
+                    </div>
+                {% endif %}
             </section>
         </main>
 
@@ -313,6 +453,32 @@
                 // Run once in case the content is already at the bottom due to small scroll height.
                 maybeEnableButton();
             }
+        }
+
+        const toastContainer = document.querySelector('[data-toast-container]');
+        if (toastContainer) {
+            const dismissToast = (toast, delay = 0) => {
+                if (!toast) {
+                    return;
+                }
+                window.setTimeout(() => {
+                    toast.classList.add('toast--closing');
+                    window.setTimeout(() => {
+                        toast.remove();
+                        if (!toastContainer.querySelector('[data-toast]')) {
+                            toastContainer.hidden = true;
+                        }
+                    }, 200);
+                }, delay);
+            };
+
+            toastContainer.querySelectorAll('[data-toast]').forEach((toast, index) => {
+                dismissToast(toast, 3500 + index * 500);
+                const closeButton = toast.querySelector('[data-toast-close]');
+                if (closeButton) {
+                    closeButton.addEventListener('click', () => dismissToast(toast));
+                }
+            });
         }
     })();
     </script>
