@@ -17,21 +17,23 @@ env = environ.Env(
     ION_SCOPE=(list, ["read"]),
     SCAV_HUNT_TEAM_YEARS=(list, []),
     SCAV_SUBMISSION_COOLDOWN_SECONDS=(int, 3),
-    HUNT_YEAR=(str, '2025'),  # Changed to str to accept any string value
+    HUNT_YEAR=(str, "2025"),  # Changed to str to accept any string value
 )
 
+# If a .env file exists, load it before reading any env vars so defaults
+# declared above (like HUNT_YEAR) are overridden by file values.
+env_file = BASE_DIR / ".env"
+if env_file.exists():
+    environ.Env.read_env(env_file)
+
 # Make HUNT_YEAR available as a module-level setting
-HUNT_YEAR = env('HUNT_YEAR')
+HUNT_YEAR = env("HUNT_YEAR")
 
 # Convert to int if it's a numeric string, otherwise keep as string
 try:
     HUNT_YEAR = int(HUNT_YEAR)
 except (ValueError, TypeError):
     pass  # Keep as string if not convertible to int
-
-env_file = BASE_DIR / ".env"
-if env_file.exists():
-    environ.Env.read_env(env_file)
 
 SECRET_KEY = env("DJANGO_SECRET_KEY", default=None)
 if not SECRET_KEY:
@@ -95,7 +97,12 @@ def _build_team_years() -> list[int]:
     if not team_years:
         reference_dt = SCAV_HUNT_END or datetime.now(tz=SCAV_HUNT_TZ)
         reference_year = reference_dt.year
-        team_years = [reference_year - 3, reference_year - 2, reference_year - 1, reference_year]
+        team_years = [
+            reference_year - 3,
+            reference_year - 2,
+            reference_year - 1,
+            reference_year,
+        ]
 
     return sorted(team_years)
 
@@ -110,55 +117,55 @@ SCAV_SUBMISSION_COOLDOWN_SECONDS = env("SCAV_SUBMISSION_COOLDOWN_SECONDS")
 # Application definition
 
 INSTALLED_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-    'core',
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    "core",
 ]
 
 MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-ROOT_URLCONF = 'hunt.urls'
+ROOT_URLCONF = "hunt.urls"
 
 TEMPLATES = [
     {
-        'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / 'templates'],
-        'APP_DIRS': True,
-        'OPTIONS': {
-            'context_processors': [
-                'django.template.context_processors.debug',
-                'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
-                'core.context_processors.hunt_settings',
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [BASE_DIR / "templates"],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.debug",
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+                "core.context_processors.hunt_settings",
             ],
         },
     },
 ]
 
-WSGI_APPLICATION = 'hunt.wsgi.application'
+WSGI_APPLICATION = "hunt.wsgi.application"
 
 
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
     }
 }
 
@@ -168,16 +175,16 @@ DATABASES = {
 
 AUTH_PASSWORD_VALIDATORS = [
     {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
     },
     {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
     },
 ]
 
@@ -185,9 +192,9 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/5.0/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = "UTC"
 
 USE_I18N = True
 
@@ -197,25 +204,25 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.0/howto/static-files/
 
-STATIC_URL = 'static/'
-STATICFILES_DIRS = [BASE_DIR / 'static']
-STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATIC_URL = "static/"
+STATICFILES_DIRS = [BASE_DIR / "static"]
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
 
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
 # Ion OAuth settings (placeholders for future integration)
 ION_AUTHORIZE_URL = env(
-    'ION_AUTHORIZE_URL', default='https://ion.tjhsst.edu/oauth/authorize/'
+    "ION_AUTHORIZE_URL", default="https://ion.tjhsst.edu/oauth/authorize/"
 )
-ION_TOKEN_URL = env('ION_TOKEN_URL', default='https://ion.tjhsst.edu/oauth/token/')
-ION_PROFILE_URL = env('ION_PROFILE_URL', default='https://ion.tjhsst.edu/api/profile')
-ION_CLIENT_ID = env('ION_CLIENT_ID', default=None)
-ION_CLIENT_SECRET = env('ION_CLIENT_SECRET', default=None)
-ION_REDIRECT_URI = env('ION_REDIRECT_URI', default=None)
-ION_SCOPE = env('ION_SCOPE')
+ION_TOKEN_URL = env("ION_TOKEN_URL", default="https://ion.tjhsst.edu/oauth/token/")
+ION_PROFILE_URL = env("ION_PROFILE_URL", default="https://ion.tjhsst.edu/api/profile")
+ION_CLIENT_ID = env("ION_CLIENT_ID", default=None)
+ION_CLIENT_SECRET = env("ION_CLIENT_SECRET", default=None)
+ION_REDIRECT_URI = env("ION_REDIRECT_URI", default=None)
+ION_SCOPE = env("ION_SCOPE")
