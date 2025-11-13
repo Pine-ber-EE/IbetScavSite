@@ -14,12 +14,12 @@
     <div class="page">
         <header class="brand">
             <span class="mark">SCAV</span>
-            <span class="accent">2026</span>
+            <span class="accent">{{ HUNT_YEAR }}</span>
         </header>
         <main class="card">
             <section class="card__header">
                 <h1>Welcome to the Hunt</h1>
-                <p>Join the online scavenger hunt designed for our school community.</p>
+                <p>Join the online scavenger hunt</p>
             </section>
             <section class="card__content">
                 {% if missing_settings %}
@@ -48,7 +48,7 @@
             </section>
         </main>
         <footer class="footer">
-            <p>&copy; {% now "Y" %} SCAV 2026 · Crafted by students for students</p>
+            <p>&copy; {% now "Y" %} SCAV {{ HUNT_YEAR }} · Crafted by students for students</p>
         </footer>
     </div>
 </body>

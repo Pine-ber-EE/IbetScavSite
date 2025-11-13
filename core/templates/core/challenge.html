@@ -63,7 +63,7 @@
                 </div>
                 <div class="site-nav__title">
                     <span class="title-main">Scavenger Hunt</span>
-                    <span class="title-sub">{{ now_year }}</span>
+                    <span class="title-sub">{{ HUNT_YEAR }}</span>
                 </div>
             </div>
             <div class="site-nav__center">
@@ -266,7 +266,7 @@
         </main>
 
         <footer class="footer">
-            <p>&copy; {% now "Y" %} SCAV 2026 · Crafted by students for students</p>
+            <p>&copy; {% now "Y" %} SCAV {{ HUNT_YEAR }} · Crafted by students for students</p>
         </footer>
 
         <div class="modal-overlay" data-terms-overlay hidden>

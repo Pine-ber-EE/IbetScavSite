@@ -10,12 +10,64 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'css/core.css' %}">
     <link rel="icon" href="{% static 'img/favicon.png' %}" type="image/png">
+    <style>
+        .leaderboard-grid {
+            display: grid;
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+        .leaderboard-card {
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .leaderboard-card--highlight {
+            border-left: 4px solid #4f46e5;
+        }
+        .leaderboard-rank {
+            font-weight: 600;
+            color: #6b7280;
+            margin-right: 1rem;
+        }
+        .leaderboard-team {
+            font-weight: 600;
+            color: #111827;
+        }
+        .leaderboard-score {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #4f46e5;
+        }
+        .leaderboard-meta {
+            font-size: 0.875rem;
+            color: #6b7280;
+            margin-right: 1rem;
+        }
+        .leaderboard-meta--badge {
+            background: #eef2ff;
+            color: #4f46e5;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-weight: 500;
+        }
+        .final-scores-title {
+            text-align: center;
+            margin: 2rem 0 1rem;
+            color: #4f46e5;
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+    </style>
 </head>
 <body>
     <div class="page">
         <header class="brand">
             <span class="mark">SCAV</span>
-            <span class="accent">2026</span>
+            <span class="accent">{{ HUNT_YEAR }}</span>
         </header>
         <main class="card">
             <section class="card__header">
@@ -23,19 +75,35 @@
                 <p>{{ hunt_message }}</p>
             </section>
             <section class="card__content">
-                <div class="cta">
-                    {% if hunt_starts_at %}
-                        <p>The scavenger hunt opens on <strong>{{ hunt_starts_at }}</strong>.</p>
-                    {% endif %}
-                    {% if hunt_ends_at %}
-                        <p>Once open, it runs until <strong>{{ hunt_ends_at }}</strong>.</p>
-                    {% endif %}
-                    <p class="muted">Check back soon — we’re excited to hunt with you!</p>
-                </div>
+                {% if hunt_has_ended %}
+                    <h2 class="final-scores-title">Final Scores</h2>
+                    <div class="leaderboard-grid">
+                        {% for entry in leaderboard %}
+                            <article class="leaderboard-card{% if entry.is_user_team %} leaderboard-card--highlight{% endif %}">
+                                <div>
+                                    <span class="leaderboard-rank">#{{ entry.rank }}</span>
+                                    <span class="leaderboard-team">{{ entry.label }}</span>
+                                </div>
+                                <div class="leaderboard-score">{{ entry.score }} pts</div>
+                            </article>
+                        {% empty %}
+                            <p>No scores available yet.</p>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="cta">
+                        {% if hunt_starts_at %}
+                            <p>The scavenger hunt opens on <strong>{{ hunt_starts_at }}</strong>.</p>
+                        {% endif %}
+                        {% if hunt_ends_at %}
+                            <p>Once open, it runs until <strong>{{ hunt_ends_at }}</strong>.</p>
+                        {% endif %}
+                    </div>
+                {% endif %}
             </section>
         </main>
         <footer class="footer">
-            <p>&copy; {% now "Y" %} SCAV 2026 · Crafted by students for students</p>
+            <p>&copy; {% now "Y" %} SCAV {{ HUNT_YEAR }} · Crafted by students for students</p>
         </footer>
     </div>
 </body>

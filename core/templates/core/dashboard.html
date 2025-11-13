@@ -14,7 +14,7 @@
     <div class="page">
         <header class="brand">
             <span class="mark">SCAV</span>
-            <span class="accent">2026</span>
+            <span class="accent">{{ HUNT_YEAR }}</span>
         </header>
         <main class="card">
             <section class="card__header">
@@ -43,7 +43,7 @@
             </section>
         </main>
         <footer class="footer">
-            <p>&copy; {% now "Y" %} SCAV 2026 · Crafted by students for students</p>
+            <p>&copy; {% now "Y" %} SCAV {{ HUNT_YEAR }} · Crafted by students for students</p>
         </footer>
     </div>
 </body>

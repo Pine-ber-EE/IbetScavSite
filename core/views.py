@@ -487,19 +487,30 @@ def challenge_view(request):
         return redirect("core:login")
 
     is_open, state, message = _hunt_window_status()
+    hunt_has_ended = state == "ended"
+    
+    # Only build challenge catalog if the hunt is open or user is admin
+    challenge_catalog = {}
+    if is_open or participant.is_admin:
+        challenge_catalog = _build_challenge_catalog(participant)
 
-    challenge_catalog = _build_challenge_catalog(participant)
+    # Always build leaderboard for the closed template
+    leaderboard = _build_leaderboard(participant.graduation_year)
 
     base_context = {
         "participant": participant,
         "hunt_state": state,
+        "hunt_has_ended": hunt_has_ended,
         "hunt_message": message,
         "hunt_starts_at": _format_est(settings.SCAV_HUNT_START),
         "hunt_ends_at": _format_est(settings.SCAV_HUNT_END),
-        "leaderboard": _build_leaderboard(participant.graduation_year),
+        "leaderboard": leaderboard,
         "now_year": timezone.now().astimezone(settings.SCAV_HUNT_TZ).year,
-        "challenge_catalog": challenge_catalog,
     }
+
+    # Only add challenge catalog if we built it
+    if challenge_catalog:
+        base_context["challenge_catalog"] = challenge_catalog
 
     base_context.update(_countdown_context(participant, is_open))
 

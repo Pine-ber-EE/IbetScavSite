@@ -17,7 +17,17 @@ env = environ.Env(
     ION_SCOPE=(list, ["read"]),
     SCAV_HUNT_TEAM_YEARS=(list, []),
     SCAV_SUBMISSION_COOLDOWN_SECONDS=(int, 3),
+    HUNT_YEAR=(str, '2025'),  # Changed to str to accept any string value
 )
+
+# Make HUNT_YEAR available as a module-level setting
+HUNT_YEAR = env('HUNT_YEAR')
+
+# Convert to int if it's a numeric string, otherwise keep as string
+try:
+    HUNT_YEAR = int(HUNT_YEAR)
+except (ValueError, TypeError):
+    pass  # Keep as string if not convertible to int
 
 env_file = BASE_DIR / ".env"
 if env_file.exists():
@@ -132,6 +142,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'core.context_processors.hunt_settings',
             ],
         },
     },
