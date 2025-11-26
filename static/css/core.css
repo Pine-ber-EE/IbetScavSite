@@ -618,6 +618,13 @@ body.layout {
     gap: 1rem;
     position: relative;
     transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    min-width: 0;
+}
+
+.challenge-card,
+.challenge-card * {
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .challenge-card:hover {
@@ -706,6 +713,7 @@ body[data-theme="dark"] .challenge-card__admin-actions {
 .challenge-card__header h4 {
     font-size: 1.1rem;
     font-weight: 600;
+    overflow-wrap: anywhere;
 }
 
 .challenge-card__meta {
@@ -715,6 +723,7 @@ body[data-theme="dark"] .challenge-card__admin-actions {
     margin-top: 0.5rem;
     font-size: 0.85rem;
     color: var(--text-muted);
+    overflow-wrap: anywhere;
 }
 
 .challenge-card__badge {
@@ -754,13 +763,16 @@ body[data-theme="dark"] .challenge-card__admin-actions {
     color: var(--text);
 }
 
+
 .challenge-card__note {
     color: var(--text-muted);
+    overflow-wrap: anywhere;
 }
 
 .challenge-card__description {
     color: var(--text-muted);
     line-height: 1.6;
+    overflow-wrap: anywhere;
 }
 
 .challenge-card__prereqs {
@@ -769,6 +781,7 @@ body[data-theme="dark"] .challenge-card__admin-actions {
     background: rgba(37, 99, 235, 0.08);
     display: grid;
     gap: 0.5rem;
+    overflow-wrap: anywhere;
 }
 
 .challenge-card__prereqs-label {
@@ -795,6 +808,7 @@ body[data-theme="dark"] .challenge-card__admin-actions {
 .challenge-card__solves {
     display: grid;
     gap: 0.45rem;
+    overflow-wrap: anywhere;
 }
 
 .challenge-card__solves-label {
@@ -870,6 +884,7 @@ body[data-theme="dark"] .challenge-card__admin-actions {
     background: rgba(148, 163, 184, 0.12);
     color: var(--text-muted);
     height: 43px;
+    overflow-wrap: anywhere;
 }
 
 .challenge-card__status-line {
