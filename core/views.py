@@ -1,10 +1,12 @@
 """Views for the Scavenger Hunt core app."""
 
+import json
 from collections import defaultdict
 from datetime import timedelta
 from math import ceil
 from typing import Any
 
+import requests
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import get_user_model, login as auth_login, logout as auth_logout
@@ -18,7 +20,7 @@ from django.utils import formats, timezone
 from django.views.decorators.http import require_POST
 from requests_oauthlib import OAuth2Session
 
-from .models import Challenge, ChallengeCategory, ChallengeSolve, Participant
+from .models import Challenge, ChallengeCategory, ChallengeSolve, DiscordSettings, Participant
 
 
 SESSION_STATE_KEY = "ion_oauth_state"
@@ -302,6 +304,72 @@ def _countdown_context(participant: Participant, is_open: bool) -> dict[str, Any
         "show_countdown": show_countdown,
         "countdown_target": end_est.isoformat(),
     }
+
+
+def _send_discord_first_blood(challenge: Challenge, participant: Participant, team_year: int, awarded_points: int) -> None:
+    """Send a Discord webhook notification for first blood."""
+    try:
+        discord_settings = DiscordSettings.load()
+        if not discord_settings.notifications_enabled or not discord_settings.webhook_url:
+            return
+
+        # Create a rich embed for the notification
+        embed = {
+            "title": "🩸 FIRST BLOOD! 🩸",
+            "description": f"**{challenge.title}** has been solved for the first time!",
+            "color": 15158332,  # Red color
+            "fields": [
+                {
+                    "name": "Challenge",
+                    "value": challenge.title,
+                    "inline": True
+                },
+                {
+                    "name": "Solved By",
+                    "value": f"Class of {team_year}",
+                    "inline": True
+                },
+                {
+                    "name": "Points Awarded",
+                    "value": str(awarded_points),
+                    "inline": True
+                },
+                {
+                    "name": "Category",
+                    "value": challenge.category.name,
+                    "inline": True
+                },
+                {
+                    "name": "Challenge Type",
+                    "value": challenge.get_challenge_type_display(),
+                    "inline": True
+                },
+                {
+                    "name": "Solver",
+                    "value": participant.display_name or participant.ion_username,
+                    "inline": True
+                }
+            ],
+            "timestamp": timezone.now().isoformat(),
+            "footer": {
+                "text": "Scavenger Hunt"
+            }
+        }
+
+        payload = {
+            "embeds": [embed],
+            "username": "First Blood Bot",
+        }
+
+        response = requests.post(
+            discord_settings.webhook_url,
+            json=payload,
+            timeout=5,
+        )
+        response.raise_for_status()
+    except Exception:
+        # Silently fail to avoid disrupting the solve process
+        pass
 
 
 def login_view(request):
@@ -622,6 +690,7 @@ def submit_challenge(request, challenge_slug: str):
 
         solves_count = ChallengeSolve.objects.filter(challenge=challenge).count()
         awarded_points = challenge.points_for_next_solve(solves_count)
+        is_first_blood = solves_count == 0
 
         ChallengeSolve.objects.create(
             challenge=challenge,
@@ -630,6 +699,9 @@ def submit_challenge(request, challenge_slug: str):
             awarded_points=awarded_points,
             submitted_answer=submitted_answer,
         )
+
+        if is_first_blood:
+            _send_discord_first_blood(challenge, participant, team_year, awarded_points)
 
         messages.success(
             request,

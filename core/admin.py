@@ -6,6 +6,7 @@ from .models import (
     ChallengeCategory,
     ChallengeDependency,
     ChallengeSolve,
+    DiscordSettings,
     Participant,
 )
 
@@ -99,3 +100,22 @@ class ParticipantAdmin(admin.ModelAdmin):
     list_display = ("ion_username", "display_name", "graduation_year", "is_admin", "last_login")
     search_fields = ("ion_username", "display_name", "email")
     list_filter = ("is_admin", "graduation_year")
+
+
+@admin.register(DiscordSettings)
+class DiscordSettingsAdmin(admin.ModelAdmin):
+    list_display = ("notifications_enabled", "webhook_url", "updated_at")
+    fieldsets = (
+        ("Discord Notification Settings", {
+            "fields": ("notifications_enabled", "webhook_url"),
+            "description": "Configure Discord first blood notifications. When enabled, "
+                         "a notification will be sent to the Discord webhook URL whenever "
+                         "a challenge is solved for the first time.",
+        }),
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False

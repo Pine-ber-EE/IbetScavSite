@@ -236,3 +236,37 @@ class ChallengeSolve(models.Model):
 
     def __str__(self) -> str:  # pragma: no cover - trivial
         return f"{self.challenge} solved by {self.team_year} for {self.awarded_points}"
+
+
+class DiscordSettings(models.Model):
+    """Singleton model for Discord webhook settings."""
+
+    webhook_url = models.URLField(
+        max_length=500,
+        blank=True,
+        help_text="Discord webhook URL for first blood notifications",
+    )
+    notifications_enabled = models.BooleanField(
+        default=False,
+        help_text="Enable/disable Discord first blood notifications",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Discord Settings"
+        verbose_name_plural = "Discord Settings"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        pass
+
+    @classmethod
+    def load(cls):
+        obj, created = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def __str__(self) -> str:
+        return "Discord Settings"
