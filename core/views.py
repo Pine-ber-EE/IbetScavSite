@@ -888,8 +888,10 @@ def analytics_view(request):
             recent_activity.append(
                 {
                     "challenge": solve.challenge.title,
+                    "challenge_slug": solve.challenge.slug,
                     "solver": solve.participant.display_name
                     or solve.participant.ion_username,
+                    "solver_username": solve.participant.ion_username,
                     "points": solve.awarded_points,
                     "time": solve.created_at.astimezone(settings.SCAV_HUNT_TZ),
                 }
@@ -922,6 +924,7 @@ def analytics_view(request):
             {
                 "id": challenge.id,
                 "title": challenge.title,
+                "slug": challenge.slug,
                 "category": challenge.category.name,
                 "type": challenge.get_challenge_type_display(),
                 "base_points": challenge.base_points,
@@ -933,6 +936,9 @@ def analytics_view(request):
                     first_blood.participant.display_name
                     or first_blood.participant.ion_username
                 )
+                if first_blood
+                else None,
+                "first_blood_username": first_blood.participant.ion_username
                 if first_blood
                 else None,
                 "first_blood_time": first_blood.created_at.astimezone(
@@ -1014,3 +1020,246 @@ def switch_class_view(request):
             messages.error(request, "Invalid class year selected.")
 
     return redirect("core:analytics")
+
+
+def submission_detail_view(request, solve_id: int):
+    """Display detailed information about a specific submission."""
+    participant = _get_logged_in_participant(request)
+    if not participant:
+        return redirect("core:login")
+
+    if not participant.is_admin:
+        messages.error(request, "You do not have permission to access this page.")
+        return redirect("core:challenge")
+
+    solve = get_object_or_404(
+        ChallengeSolve.objects.select_related(
+            "challenge", "challenge__category", "participant"
+        ),
+        pk=solve_id,
+    )
+
+    # Check if this was first blood
+    first_solve = (
+        ChallengeSolve.objects.filter(challenge=solve.challenge)
+        .order_by("created_at")
+        .first()
+    )
+    is_first_blood = first_solve and first_solve.id == solve.id
+
+    # Get other solves for the same challenge
+    other_solves = (
+        ChallengeSolve.objects.filter(challenge=solve.challenge)
+        .exclude(pk=solve.pk)
+        .select_related("participant")
+        .order_by("created_at")
+    )
+
+    # Get other solves by the same participant
+    participant_other_solves = (
+        ChallengeSolve.objects.filter(participant=solve.participant)
+        .exclude(pk=solve.pk)
+        .select_related("challenge", "challenge__category")
+        .order_by("-created_at")[:10]
+    )
+
+    context = {
+        "participant": participant,
+        "solve": solve,
+        "is_first_blood": is_first_blood,
+        "other_solves": other_solves,
+        "participant_other_solves": participant_other_solves,
+        "solve_time": solve.created_at.astimezone(settings.SCAV_HUNT_TZ),
+    }
+
+    return render(request, "core/submission_detail.html", context)
+
+
+def user_detail_view(request, username: str):
+    """Display detailed analytics about a specific user."""
+    participant = _get_logged_in_participant(request)
+    if not participant:
+        return redirect("core:login")
+
+    if not participant.is_admin:
+        messages.error(request, "You do not have permission to access this page.")
+        return redirect("core:challenge")
+
+    target_user = get_object_or_404(Participant, ion_username=username)
+
+    # Get all solves by this user
+    user_solves = (
+        ChallengeSolve.objects.filter(participant=target_user)
+        .select_related("challenge", "challenge__category")
+        .order_by("-created_at")
+    )
+
+    # Calculate statistics
+    total_points = user_solves.aggregate(total=Sum("awarded_points"))["total"] or 0
+    total_solves = user_solves.count()
+
+    # First bloods
+    first_bloods = []
+    for solve in user_solves:
+        first_solve = (
+            ChallengeSolve.objects.filter(challenge=solve.challenge)
+            .order_by("created_at")
+            .first()
+        )
+        if first_solve and first_solve.id == solve.id:
+            first_bloods.append(solve)
+
+    # Categories breakdown
+    category_stats = (
+        user_solves.values("challenge__category__name")
+        .annotate(
+            solve_count=Count("id"),
+            points=Sum("awarded_points"),
+        )
+        .order_by("-points")
+    )
+
+    # Challenge types breakdown
+    type_stats = (
+        user_solves.values("challenge__challenge_type")
+        .annotate(
+            solve_count=Count("id"),
+            points=Sum("awarded_points"),
+        )
+        .order_by("-points")
+    )
+
+    # Get team info
+    team_year = target_user.graduation_year
+    team_years = settings.SCAV_HUNT_TEAM_YEARS
+    is_valid_team = team_year in team_years if team_year else False
+
+    # Team rank if applicable
+    team_rank = None
+    if is_valid_team:
+        leaderboard = _build_leaderboard(team_year)
+        for entry in leaderboard:
+            if entry["year"] == team_year:
+                team_rank = entry["rank"]
+                break
+
+    # Contribution to team
+    team_total_points = 0
+    contribution_percent = 0
+    if is_valid_team:
+        team_total_points = (
+            ChallengeSolve.objects.filter(team_year=team_year).aggregate(
+                total=Sum("awarded_points")
+            )["total"]
+            or 0
+        )
+        if team_total_points > 0:
+            contribution_percent = round((total_points / team_total_points) * 100, 1)
+
+    context = {
+        "participant": participant,
+        "target_user": target_user,
+        "user_solves": user_solves,
+        "total_points": total_points,
+        "total_solves": total_solves,
+        "first_bloods": first_bloods,
+        "category_stats": category_stats,
+        "type_stats": type_stats,
+        "team_year": team_year,
+        "is_valid_team": is_valid_team,
+        "team_rank": team_rank,
+        "team_total_points": team_total_points,
+        "contribution_percent": contribution_percent,
+    }
+
+    return render(request, "core/user_detail.html", context)
+
+
+def challenge_detail_view(request, challenge_slug: str):
+    """Display detailed analytics about a specific challenge."""
+    participant = _get_logged_in_participant(request)
+    if not participant:
+        return redirect("core:login")
+
+    if not participant.is_admin:
+        messages.error(request, "You do not have permission to access this page.")
+        return redirect("core:challenge")
+
+    challenge = get_object_or_404(
+        Challenge.objects.select_related("category").prefetch_related("prerequisites"),
+        slug=challenge_slug,
+    )
+
+    # Get all solves for this challenge
+    solves = (
+        ChallengeSolve.objects.filter(challenge=challenge)
+        .select_related("participant")
+        .order_by("created_at")
+    )
+
+    # First blood info
+    first_blood = solves.first()
+
+    # Stats by team year
+    team_stats_raw = (
+        solves.values("team_year")
+        .annotate(
+            solve_count=Count("id"),
+            points=Sum("awarded_points"),
+        )
+        .order_by("team_year")
+    )
+
+    # Time to first solve per team
+    team_solve_times = {}
+    for solve in solves:
+        if solve.team_year not in team_solve_times:
+            team_solve_times[solve.team_year] = solve.created_at.astimezone(
+                settings.SCAV_HUNT_TZ
+            )
+
+    # Combine team stats with first solve times
+    team_stats = []
+    for stat in team_stats_raw:
+        team_stats.append(
+            {
+                "team_year": stat["team_year"],
+                "solve_count": stat["solve_count"],
+                "points": stat["points"],
+                "first_solve_time": team_solve_times.get(stat["team_year"]),
+            }
+        )
+
+    # Challenges that depend on this one
+    dependent_challenges = Challenge.objects.filter(
+        prerequisites=challenge, is_active=True
+    ).select_related("category")
+
+    # Prerequisites for this challenge
+    prerequisites = challenge.prerequisites.all()
+
+    # Points progression (for decreasing challenges)
+    points_progression = []
+    if challenge.is_decreasing():
+        for i in range(len(solves) + 3):  # Show a few potential future values
+            points_progression.append(
+                {
+                    "solve_number": i + 1,
+                    "points": challenge.points_for_next_solve(i),
+                }
+            )
+
+    context = {
+        "participant": participant,
+        "challenge": challenge,
+        "solves": solves,
+        "first_blood": first_blood,
+        "team_stats": team_stats,
+        "dependent_challenges": dependent_challenges,
+        "prerequisites": prerequisites,
+        "points_progression": points_progression,
+        "total_solves": solves.count(),
+        "current_points": challenge.points_for_next_solve(solves.count()),
+    }
+
+    return render(request, "core/challenge_detail.html", context)

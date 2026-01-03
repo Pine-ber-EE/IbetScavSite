@@ -96,6 +96,15 @@
             background: var(--background);
         }
 
+        .submissions-table a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .submissions-table a:hover {
+            text-decoration: underline;
+        }
+
         .submissions-table td.answer {
             max-width: 200px;
             overflow: hidden;
@@ -198,6 +207,15 @@
             color: var(--text);
         }
 
+        .contributor-name a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .contributor-name a:hover {
+            text-decoration: underline;
+        }
+
         .contributor-stats {
             color: var(--text-muted);
         }
@@ -221,9 +239,27 @@
             color: var(--text);
         }
 
+        .activity-challenge a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .activity-challenge a:hover {
+            text-decoration: underline;
+        }
+
         .activity-meta {
             color: var(--text-muted);
             font-size: 0.8rem;
+        }
+
+        .activity-meta a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .activity-meta a:hover {
+            text-decoration: underline;
         }
 
         .switch-class-form {
@@ -296,6 +332,15 @@
 
         .challenge-stats-table tr:hover {
             background: var(--background);
+        }
+
+        .challenge-stats-table a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .challenge-stats-table a:hover {
+            text-decoration: underline;
         }
 
         .unsolved-badge {
@@ -534,13 +579,13 @@
                                 <tbody>
                                     {% for log in submission_logs %}
                                         <tr>
-                                            <td>{{ log.created_at|date:"M j, g:i A" }}</td>
+                                            <td><a href="{% url 'core:submission_detail' log.id %}">{{ log.created_at|date:"M j, g:i A" }}</a></td>
                                             <td>
-                                                {{ log.challenge_title }}
+                                                <a href="{% url 'core:challenge_detail' log.challenge_slug %}">{{ log.challenge_title }}</a>
                                                 {% if log.is_first_blood %}<span class="first-blood-badge">First Blood</span>{% endif %}
                                             </td>
                                             <td>{{ log.category_name }}</td>
-                                            <td title="{{ log.participant_username }}">{{ log.participant_name }}</td>
+                                            <td title="{{ log.participant_username }}"><a href="{% url 'core:user_detail' log.participant_username %}">{{ log.participant_name }}</a></td>
                                             <td>{{ log.team_year }}</td>
                                             <td class="answer" title="{{ log.submitted_answer }}">{{ log.submitted_answer }}</td>
                                             <td>{{ log.awarded_points }}</td>
@@ -586,7 +631,7 @@
                                     <ul class="contributor-list">
                                         {% for contrib in cls.top_contributors %}
                                             <li>
-                                                <span class="contributor-name" title="{{ contrib.username }}">{{ contrib.name }}</span>
+                                                <span class="contributor-name" title="{{ contrib.username }}"><a href="{% url 'core:user_detail' contrib.username %}">{{ contrib.name }}</a></span>
                                                 <span class="contributor-stats">{{ contrib.points }} pts · {{ contrib.solves }} solve{{ contrib.solves|pluralize }}</span>
                                             </li>
                                         {% endfor %}
@@ -600,8 +645,8 @@
                                     <ul class="activity-list">
                                         {% for activity in cls.recent_activity %}
                                             <li>
-                                                <div class="activity-challenge">{{ activity.challenge }}</div>
-                                                <div class="activity-meta">{{ activity.solver }} · {{ activity.points }} pts · {{ activity.time|date:"M j, g:i A" }}</div>
+                                                <div class="activity-challenge"><a href="{% url 'core:challenge_detail' activity.challenge_slug %}">{{ activity.challenge }}</a></div>
+                                                <div class="activity-meta"><a href="{% url 'core:user_detail' activity.solver_username %}">{{ activity.solver }}</a> · {{ activity.points }} pts · {{ activity.time|date:"M j, g:i A" }}</div>
                                             </li>
                                         {% endfor %}
                                     </ul>
@@ -631,7 +676,7 @@
                                 <tbody>
                                     {% for challenge in challenge_stats %}
                                         <tr>
-                                            <td>{{ challenge.title }}</td>
+                                            <td><a href="{% url 'core:challenge_detail' challenge.slug %}">{{ challenge.title }}</a></td>
                                             <td>{{ challenge.category }}</td>
                                             <td>{{ challenge.type }}</td>
                                             <td>{{ challenge.base_points }}</td>
@@ -641,7 +686,7 @@
                                             </td>
                                             <td>
                                                 {% if challenge.first_blood_team %}
-                                                    {{ challenge.first_blood_team }} ({{ challenge.first_blood_solver }})
+                                                    {{ challenge.first_blood_team }} (<a href="{% url 'core:user_detail' challenge.first_blood_username %}">{{ challenge.first_blood_solver }}</a>)
                                                     <br><small style="color: var(--text-muted);">{{ challenge.first_blood_time|date:"M j, g:i A" }}</small>
                                                 {% else %}
                                                     —

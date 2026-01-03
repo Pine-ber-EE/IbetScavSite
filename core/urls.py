@@ -22,5 +22,16 @@ urlpatterns = [
     ),
     path("analytics/", views.analytics_view, name="analytics"),
     path("analytics/switch-class/", views.switch_class_view, name="switch_class"),
+    path(
+        "analytics/submission/<int:solve_id>/",
+        views.submission_detail_view,
+        name="submission_detail",
+    ),
+    path("analytics/user/<str:username>/", views.user_detail_view, name="user_detail"),
+    path(
+        "analytics/challenge/<slug:challenge_slug>/",
+        views.challenge_detail_view,
+        name="challenge_detail",
+    ),
     path("logout/", views.logout_view, name="logout"),
 ]
