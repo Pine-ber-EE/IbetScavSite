@@ -18,6 +18,10 @@ class Participant(models.Model):
     email = models.EmailField(blank=True)
     graduation_year = models.PositiveIntegerField(null=True, blank=True)
     is_admin = models.BooleanField(default=False)
+    is_scavcomm = models.BooleanField(
+        default=False,
+        help_text="Scavcomm members can view analytics but cannot access Django admin.",
+    )
     last_login = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -28,6 +32,14 @@ class Participant(models.Model):
     def __str__(self) -> str:
         return self.display_name or self.ion_username
 
+    def can_view_analytics(self) -> bool:
+        """Returns True if the user can access the analytics page."""
+        return self.is_admin or self.is_scavcomm
+
+    def can_bypass_hunt_window(self) -> bool:
+        """Returns True if the user can access the site outside the hunt window."""
+        return self.is_admin or self.is_scavcomm
+
 
 class ChallengeCategory(models.Model):
     """Groups challenges under a shared theme for easier navigation."""
@@ -35,7 +47,9 @@ class ChallengeCategory(models.Model):
     name = models.CharField(max_length=120, unique=True)
     slug = models.SlugField(max_length=150, unique=True, blank=True)
     description = models.TextField(blank=True)
-    sort_order = models.PositiveIntegerField(default=0, help_text="Lower numbers appear first.")
+    sort_order = models.PositiveIntegerField(
+        default=0, help_text="Lower numbers appear first."
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -47,7 +61,11 @@ class ChallengeCategory(models.Model):
         base_slug = slugify(self.name) or str(uuid4())
         slug_candidate = base_slug
         index = 1
-        while ChallengeCategory.objects.filter(slug=slug_candidate).exclude(pk=self.pk).exists():
+        while (
+            ChallengeCategory.objects.filter(slug=slug_candidate)
+            .exclude(pk=self.pk)
+            .exists()
+        ):
             index += 1
             slug_candidate = f"{base_slug}-{index}"
         return slug_candidate
@@ -107,7 +125,9 @@ class Challenge(models.Model):
         default=0,
         help_text="Floor value for decreasing challenges when decay is applied.",
     )
-    answer = models.TextField(help_text="Exact answer string that must be submitted to award credit.")
+    answer = models.TextField(
+        help_text="Exact answer string that must be submitted to award credit."
+    )
     answer_case_sensitive = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     allow_multiple_solves = models.BooleanField(
@@ -124,7 +144,9 @@ class Challenge(models.Model):
         base_slug = slugify(self.title) or str(uuid4())
         slug_candidate = base_slug
         index = 1
-        while Challenge.objects.filter(slug=slug_candidate).exclude(pk=self.pk).exists():
+        while (
+            Challenge.objects.filter(slug=slug_candidate).exclude(pk=self.pk).exists()
+        ):
             index += 1
             slug_candidate = f"{base_slug}-{index}"
         return slug_candidate
@@ -149,10 +171,17 @@ class Challenge(models.Model):
     def clean(self):
         if self.challenge_type != self.ChallengeType.DECREASING and self.decay_percent:
             if self.decay_percent > 0:
-                raise ValidationError("Decay percentage applies only to decreasing challenges.")
+                raise ValidationError(
+                    "Decay percentage applies only to decreasing challenges."
+                )
 
-        if self.challenge_type == self.ChallengeType.DECREASING and self.decay_percent <= 0:
-            raise ValidationError("Decreasing challenges must specify a positive decay percentage.")
+        if (
+            self.challenge_type == self.ChallengeType.DECREASING
+            and self.decay_percent <= 0
+        ):
+            raise ValidationError(
+                "Decreasing challenges must specify a positive decay percentage."
+            )
 
         if self.minimum_points > self.base_points:
             raise ValidationError("Minimum points cannot exceed base points.")
@@ -160,7 +189,7 @@ class Challenge(models.Model):
     def points_for_next_solve(self, solves_count: int) -> int:
         if self.is_decreasing():
             multiplier = (Decimal("100") - self.decay_percent) / Decimal("100")
-            value = Decimal(self.base_points) * (multiplier ** solves_count)
+            value = Decimal(self.base_points) * (multiplier**solves_count)
             quantized = value.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
             return max(int(quantized), int(self.minimum_points))
         return int(self.base_points)
@@ -206,7 +235,9 @@ class ChallengeDependency(models.Model):
             if ChallengeDependency.objects.filter(
                 challenge=prerequisite, prerequisite=challenge
             ).exists():
-                raise ValidationError("Circular dependency detected between challenges.")
+                raise ValidationError(
+                    "Circular dependency detected between challenges."
+                )
 
     def __str__(self) -> str:  # pragma: no cover - trivial
         return f"{self.challenge} depends on {self.prerequisite}"
@@ -225,7 +256,9 @@ class ChallengeSolve(models.Model):
         related_name="challenge_solves",
         on_delete=models.CASCADE,
     )
-    team_year = models.PositiveIntegerField(help_text="Graduation year representing the solving class.")
+    team_year = models.PositiveIntegerField(
+        help_text="Graduation year representing the solving class."
+    )
     awarded_points = models.IntegerField()
     submitted_answer = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)

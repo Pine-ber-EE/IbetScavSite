@@ -182,6 +182,11 @@
             color: rgb(109, 40, 217);
         }
 
+        .badge--scavcomm {
+            background: rgba(16, 185, 129, 0.15);
+            color: rgb(5, 122, 85);
+        }
+
         .badge--team {
             background: rgba(37, 99, 235, 0.15);
             color: var(--accent);
@@ -335,8 +340,10 @@
                         <p class="profile-menu__hint">Signed in as <strong>{{ participant.display_name|default:participant.ion_username }}</strong></p>
                         <div class="profile-menu__actions">
                             <a href="{% url 'core:challenge' %}" class="profile-menu__button">Challenge Board</a>
-                            {% if participant.is_admin %}
+                            {% if participant.is_admin or participant.is_scavcomm %}
                                 <a href="{% url 'core:analytics' %}" class="profile-menu__button">Analytics</a>
+                            {% endif %}
+                            {% if participant.is_admin %}
                                 <a href="{% url 'admin:index' %}" class="profile-menu__button">Admin dashboard</a>
                             {% endif %}
                             <form method="post" action="{% url 'core:logout' %}" class="profile-menu__logout">
@@ -360,6 +367,7 @@
                             <h2>
                                 {{ target_user.display_name|default:target_user.ion_username }}
                                 {% if target_user.is_admin %}<span class="badge badge--admin">Admin</span>{% endif %}
+                                {% if target_user.is_scavcomm %}<span class="badge badge--scavcomm">Scavcomm</span>{% endif %}
                             </h2>
                             <p>@{{ target_user.ion_username }} · {{ target_user.email|default:"No email" }}</p>
                             {% if is_valid_team %}
@@ -522,6 +530,10 @@
                             <li>
                                 <span class="breakdown-name">Admin Status</span>
                                 <span class="breakdown-value">{% if target_user.is_admin %}Yes{% else %}No{% endif %}</span>
+                            </li>
+                            <li>
+                                <span class="breakdown-name">Scavcomm Status</span>
+                                <span class="breakdown-value">{% if target_user.is_scavcomm %}Yes{% else %}No{% endif %}</span>
                             </li>
                             <li>
                                 <span class="breakdown-name">Last Login</span>

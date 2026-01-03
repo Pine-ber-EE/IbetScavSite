@@ -322,10 +322,12 @@ def _countdown_context(participant: Participant, is_open: bool) -> dict[str, Any
     end_est = end.astimezone(settings.SCAV_HUNT_TZ)
     now_est = timezone.now().astimezone(settings.SCAV_HUNT_TZ)
 
-    # Countdown is hidden for admins outside the active window.
-    allow_for_admin = participant.is_admin and is_open
+    # Countdown is hidden for privileged users outside the active window.
+    allow_for_privileged = participant.can_bypass_hunt_window() and is_open
     show_countdown = bool(
-        is_open and (not participant.is_admin or allow_for_admin) and end_est > now_est
+        is_open
+        and (not participant.can_bypass_hunt_window() or allow_for_privileged)
+        and end_est > now_est
     )
 
     return {
@@ -574,9 +576,9 @@ def challenge_view(request):
     is_open, state, message = _hunt_window_status()
     hunt_has_ended = state == "ended"
 
-    # Only build challenge catalog if the hunt is open or user is admin
+    # Only build challenge catalog if the hunt is open or user can bypass
     challenge_catalog = {}
-    if is_open or participant.is_admin:
+    if is_open or participant.can_bypass_hunt_window():
         challenge_catalog = _build_challenge_catalog(participant)
 
     # Always build leaderboard for the closed template
@@ -599,7 +601,7 @@ def challenge_view(request):
 
     base_context.update(_countdown_context(participant, is_open))
 
-    if is_open or participant.is_admin:
+    if is_open or participant.can_bypass_hunt_window():
         return render(request, "core/challenge.html", base_context)
 
     return render(request, "core/challenge_closed.html", base_context, status=403)
@@ -796,12 +798,12 @@ SESSION_ADMIN_VIEW_AS_CLASS = "admin_view_as_class"
 
 
 def analytics_view(request):
-    """Display analytics dashboard for admins."""
+    """Display analytics dashboard for admins and scavcomm members."""
     participant = _get_logged_in_participant(request)
     if not participant:
         return redirect("core:login")
 
-    if not participant.is_admin:
+    if not participant.can_view_analytics():
         messages.error(request, "You do not have permission to access this page.")
         return redirect("core:challenge")
 
@@ -990,12 +992,12 @@ def analytics_view(request):
 
 @require_POST
 def switch_class_view(request):
-    """Allow admins to switch their view to a different class for troubleshooting."""
+    """Allow admins/scavcomm to switch their view to a different class for troubleshooting."""
     participant = _get_logged_in_participant(request)
     if not participant:
         return redirect("core:login")
 
-    if not participant.is_admin:
+    if not participant.can_view_analytics():
         messages.error(request, "You do not have permission to perform this action.")
         return redirect("core:challenge")
 
@@ -1028,7 +1030,7 @@ def submission_detail_view(request, solve_id: int):
     if not participant:
         return redirect("core:login")
 
-    if not participant.is_admin:
+    if not participant.can_view_analytics():
         messages.error(request, "You do not have permission to access this page.")
         return redirect("core:challenge")
 
@@ -1081,7 +1083,7 @@ def user_detail_view(request, username: str):
     if not participant:
         return redirect("core:login")
 
-    if not participant.is_admin:
+    if not participant.can_view_analytics():
         messages.error(request, "You do not have permission to access this page.")
         return redirect("core:challenge")
 
@@ -1181,7 +1183,7 @@ def challenge_detail_view(request, challenge_slug: str):
     if not participant:
         return redirect("core:login")
 
-    if not participant.is_admin:
+    if not participant.can_view_analytics():
         messages.error(request, "You do not have permission to access this page.")
         return redirect("core:challenge")
 

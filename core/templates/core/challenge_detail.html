@@ -418,8 +418,10 @@
                         <p class="profile-menu__hint">Signed in as <strong>{{ participant.display_name|default:participant.ion_username }}</strong></p>
                         <div class="profile-menu__actions">
                             <a href="{% url 'core:challenge' %}" class="profile-menu__button">Challenge Board</a>
-                            {% if participant.is_admin %}
+                            {% if participant.is_admin or participant.is_scavcomm %}
                                 <a href="{% url 'core:analytics' %}" class="profile-menu__button">Analytics</a>
+                            {% endif %}
+                            {% if participant.is_admin %}
                                 <a href="{% url 'admin:index' %}" class="profile-menu__button">Admin dashboard</a>
                             {% endif %}
                             <form method="post" action="{% url 'core:logout' %}" class="profile-menu__logout">
@@ -445,7 +447,9 @@
                         </div>
                     </div>
                     <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                        {% if participant.is_admin %}
                         <a href="{% url 'admin:core_challenge_change' challenge.pk %}" class="admin-link" target="_blank">Edit in Admin ↗</a>
+                        {% endif %}
                         <a href="{% url 'core:analytics' %}" class="back-link">← Back to Analytics</a>
                     </div>
                 </div>
@@ -686,12 +690,14 @@
             </section>
 
             <!-- Answer (Admin only) -->
+            {% if participant.is_admin %}
             <section class="detail-section">
                 <h3 class="section-title">Answer (Admin View)</h3>
                 <div class="description-box" style="font-family: monospace; word-break: break-all;">
                     {{ challenge.answer }}
                 </div>
             </section>
+            {% endif %}
         </main>
 
         <footer class="footer">

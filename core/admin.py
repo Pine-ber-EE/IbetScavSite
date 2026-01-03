@@ -35,11 +35,13 @@ class ChallengeAdminForm(forms.ModelForm):
                 "Decay percentage applies only to decreasing challenges.",
             )
 
-        if (
-            challenge_type == Challenge.ChallengeType.DECREASING
-            and (decay is None or decay <= 0)
+        if challenge_type == Challenge.ChallengeType.DECREASING and (
+            decay is None or decay <= 0
         ):
-            self.add_error("decay_percent", "Decreasing challenges must specify a positive decay percentage.")
+            self.add_error(
+                "decay_percent",
+                "Decreasing challenges must specify a positive decay percentage.",
+            )
 
         if challenge_type != Challenge.ChallengeType.DEPENDENT and prerequisites:
             self.add_error(
@@ -97,21 +99,31 @@ class ChallengeSolveAdmin(admin.ModelAdmin):
 
 @admin.register(Participant)
 class ParticipantAdmin(admin.ModelAdmin):
-    list_display = ("ion_username", "display_name", "graduation_year", "is_admin", "last_login")
+    list_display = (
+        "ion_username",
+        "display_name",
+        "graduation_year",
+        "is_admin",
+        "is_scavcomm",
+        "last_login",
+    )
     search_fields = ("ion_username", "display_name", "email")
-    list_filter = ("is_admin", "graduation_year")
+    list_filter = ("is_admin", "is_scavcomm", "graduation_year")
 
 
 @admin.register(DiscordSettings)
 class DiscordSettingsAdmin(admin.ModelAdmin):
     list_display = ("notifications_enabled", "webhook_url", "updated_at")
     fieldsets = (
-        ("Discord Notification Settings", {
-            "fields": ("notifications_enabled", "webhook_url"),
-            "description": "Configure Discord first blood notifications. When enabled, "
-                         "a notification will be sent to the Discord webhook URL whenever "
-                         "a challenge is solved for the first time.",
-        }),
+        (
+            "Discord Notification Settings",
+            {
+                "fields": ("notifications_enabled", "webhook_url"),
+                "description": "Configure Discord first blood notifications. When enabled, "
+                "a notification will be sent to the Discord webhook URL whenever "
+                "a challenge is solved for the first time.",
+            },
+        ),
     )
 
     def has_add_permission(self, request):
