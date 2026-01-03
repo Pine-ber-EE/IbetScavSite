@@ -102,6 +102,7 @@
                         <p class="profile-menu__hint">Signed in as <strong>{{ participant.display_name|default:participant.ion_username }}</strong></p>
                         <div class="profile-menu__actions">
                             {% if participant.is_admin %}
+                                <a href="{% url 'core:analytics' %}" class="profile-menu__button">Analytics</a>
                                 <a href="{% url 'admin:index' %}" class="profile-menu__button">Admin dashboard</a>
                             {% endif %}
                             <form method="post" action="{% url 'core:logout' %}" class="profile-menu__logout">

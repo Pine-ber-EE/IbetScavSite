@@ -20,5 +20,7 @@ urlpatterns = [
         views.move_challenge,
         name="move_challenge",
     ),
+    path("analytics/", views.analytics_view, name="analytics"),
+    path("analytics/switch-class/", views.switch_class_view, name="switch_class"),
     path("logout/", views.logout_view, name="logout"),
 ]

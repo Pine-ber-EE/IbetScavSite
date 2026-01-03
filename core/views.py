@@ -9,7 +9,11 @@ from typing import Any
 import requests
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import get_user_model, login as auth_login, logout as auth_logout
+from django.contrib.auth import (
+    get_user_model,
+    login as auth_login,
+    logout as auth_logout,
+)
 from django.core.exceptions import ImproperlyConfigured
 from django.db import transaction
 from django.db.models import Count, Prefetch, Sum
@@ -20,7 +24,13 @@ from django.utils import formats, timezone
 from django.views.decorators.http import require_POST
 from requests_oauthlib import OAuth2Session
 
-from .models import Challenge, ChallengeCategory, ChallengeSolve, DiscordSettings, Participant
+from .models import (
+    Challenge,
+    ChallengeCategory,
+    ChallengeSolve,
+    DiscordSettings,
+    Participant,
+)
 
 
 SESSION_STATE_KEY = "ion_oauth_state"
@@ -105,7 +115,9 @@ def _hunt_window_status() -> tuple[bool, str, str]:
         return False, "upcoming", message
 
     if end and now > end:
-        message = "The hunt has ended. It closed on {when}.".format(when=_format_est(end))
+        message = "The hunt has ended. It closed on {when}.".format(
+            when=_format_est(end)
+        )
         return False, "ended", message
 
     return True, "open", ""
@@ -119,7 +131,9 @@ def _build_leaderboard(user_year: int | None) -> list[dict[str, Any]]:
         .values("graduation_year")
         .annotate(member_count=Count("id"))
     )
-    member_counts = {item["graduation_year"]: item["member_count"] for item in member_aggregates}
+    member_counts = {
+        item["graduation_year"]: item["member_count"] for item in member_aggregates
+    }
 
     score_aggregates = (
         ChallengeSolve.objects.filter(team_year__in=team_years)
@@ -158,12 +172,13 @@ def _build_challenge_catalog(participant: Participant) -> dict[str, Any]:
 
     challenge_prefetch = Prefetch(
         "challenges",
-        queryset=
-        Challenge.objects.filter(is_active=True)
+        queryset=Challenge.objects.filter(is_active=True)
         .select_related("category")
         .prefetch_related(
             Prefetch("prerequisites", queryset=Challenge.objects.only("id", "title")),
-            Prefetch("solves", queryset=ChallengeSolve.objects.select_related("participant")),
+            Prefetch(
+                "solves", queryset=ChallengeSolve.objects.select_related("participant")
+            ),
         )
         .order_by("sort_order", "title"),
     )
@@ -181,7 +196,9 @@ def _build_challenge_catalog(participant: Participant) -> dict[str, Any]:
     if team_year_valid:
         team_solves = ChallengeSolve.objects.filter(team_year=team_year)
         solved_ids_by_team = {solve.challenge_id for solve in team_solves}
-        awarded_points_for_team = {solve.challenge_id: solve.awarded_points for solve in team_solves}
+        awarded_points_for_team = {
+            solve.challenge_id: solve.awarded_points for solve in team_solves
+        }
 
     for category in categories:
         challenge_cards: list[dict[str, Any]] = []
@@ -208,7 +225,9 @@ def _build_challenge_catalog(participant: Participant) -> dict[str, Any]:
                                 prerequisites_met = False
                     prerequisite_entries.append({"title": prereq.title, "met": met})
             elif challenge.requires_dependencies():
-                prerequisites_met = True  # No prerequisites defined means nothing blocks submission
+                prerequisites_met = (
+                    True  # No prerequisites defined means nothing blocks submission
+                )
 
             exclusive_locked = False
             if challenge.is_exclusive():
@@ -232,7 +251,8 @@ def _build_challenge_catalog(participant: Participant) -> dict[str, Any]:
                     {
                         "team_year": solve.team_year,
                         "awarded_points": solve.awarded_points,
-                        "by_user_team": team_year_valid and solve.team_year == team_year,
+                        "by_user_team": team_year_valid
+                        and solve.team_year == team_year,
                     }
                     for solve in solves
                 ),
@@ -262,11 +282,17 @@ def _build_challenge_catalog(participant: Participant) -> dict[str, Any]:
                     "solves_count": total_solves,
                     "solves_summary": solves_summary,
                     "sort_order": challenge.sort_order,
-                    "admin_url": reverse("admin:core_challenge_change", args=[challenge.pk]),
+                    "admin_url": reverse(
+                        "admin:core_challenge_change", args=[challenge.pk]
+                    ),
                     "can_move_left": index > 0,
                     "can_move_right": index < total_in_category - 1,
-                    "move_left_url": reverse("core:move_challenge", args=[challenge.slug, "left"]),
-                    "move_right_url": reverse("core:move_challenge", args=[challenge.slug, "right"]),
+                    "move_left_url": reverse(
+                        "core:move_challenge", args=[challenge.slug, "left"]
+                    ),
+                    "move_right_url": reverse(
+                        "core:move_challenge", args=[challenge.slug, "right"]
+                    ),
                 }
             )
 
@@ -298,7 +324,9 @@ def _countdown_context(participant: Participant, is_open: bool) -> dict[str, Any
 
     # Countdown is hidden for admins outside the active window.
     allow_for_admin = participant.is_admin and is_open
-    show_countdown = bool(is_open and (not participant.is_admin or allow_for_admin) and end_est > now_est)
+    show_countdown = bool(
+        is_open and (not participant.is_admin or allow_for_admin) and end_est > now_est
+    )
 
     return {
         "show_countdown": show_countdown,
@@ -306,11 +334,16 @@ def _countdown_context(participant: Participant, is_open: bool) -> dict[str, Any
     }
 
 
-def _send_discord_first_blood(challenge: Challenge, participant: Participant, team_year: int, awarded_points: int) -> None:
+def _send_discord_first_blood(
+    challenge: Challenge, participant: Participant, team_year: int, awarded_points: int
+) -> None:
     """Send a Discord webhook notification for first blood."""
     try:
         discord_settings = DiscordSettings.load()
-        if not discord_settings.notifications_enabled or not discord_settings.webhook_url:
+        if (
+            not discord_settings.notifications_enabled
+            or not discord_settings.webhook_url
+        ):
             return
 
         # Create a rich embed for the notification
@@ -319,41 +352,27 @@ def _send_discord_first_blood(challenge: Challenge, participant: Participant, te
             "description": f"**{challenge.title}** has been solved for the first time!",
             "color": 15158332,  # Red color
             "fields": [
-                {
-                    "name": "Challenge",
-                    "value": challenge.title,
-                    "inline": True
-                },
-                {
-                    "name": "Solved By",
-                    "value": f"Class of {team_year}",
-                    "inline": True
-                },
+                {"name": "Challenge", "value": challenge.title, "inline": True},
+                {"name": "Solved By", "value": f"Class of {team_year}", "inline": True},
                 {
                     "name": "Points Awarded",
                     "value": str(awarded_points),
-                    "inline": True
+                    "inline": True,
                 },
-                {
-                    "name": "Category",
-                    "value": challenge.category.name,
-                    "inline": True
-                },
+                {"name": "Category", "value": challenge.category.name, "inline": True},
                 {
                     "name": "Challenge Type",
                     "value": challenge.get_challenge_type_display(),
-                    "inline": True
+                    "inline": True,
                 },
                 {
                     "name": "Solver",
                     "value": participant.display_name or participant.ion_username,
-                    "inline": True
-                }
+                    "inline": True,
+                },
             ],
             "timestamp": timezone.now().isoformat(),
-            "footer": {
-                "text": "Scavenger Hunt"
-            }
+            "footer": {"text": "Scavenger Hunt"},
         }
 
         payload = {
@@ -394,8 +413,7 @@ def oauth_start(request):
     missing_settings = _missing_oauth_settings()
     if missing_settings:
         raise ImproperlyConfigured(
-            "Ion OAuth is not fully configured. Missing: "
-            + ", ".join(missing_settings)
+            "Ion OAuth is not fully configured. Missing: " + ", ".join(missing_settings)
         )
 
     oauth = _create_oauth_session()
@@ -410,8 +428,7 @@ def oauth_callback(request):
     missing_settings = _missing_oauth_settings(require_secret=True)
     if missing_settings:
         raise ImproperlyConfigured(
-            "Ion OAuth is not fully configured. Missing: "
-            + ", ".join(missing_settings)
+            "Ion OAuth is not fully configured. Missing: " + ", ".join(missing_settings)
         )
 
     state = request.GET.get("state")
@@ -556,7 +573,7 @@ def challenge_view(request):
 
     is_open, state, message = _hunt_window_status()
     hunt_has_ended = state == "ended"
-    
+
     # Only build challenge catalog if the hunt is open or user is admin
     challenge_catalog = {}
     if is_open or participant.is_admin:
@@ -620,7 +637,9 @@ def submit_challenge(request, challenge_slug: str):
                 next_allowed = last_attempt + timedelta(seconds=cooldown_seconds)
                 now = timezone.now()
                 if now < next_allowed:
-                    remaining_seconds = max(1, ceil((next_allowed - now).total_seconds()))
+                    remaining_seconds = max(
+                        1, ceil((next_allowed - now).total_seconds())
+                    )
                     messages.error(
                         request,
                         "Please wait {seconds} more second{plural} before submitting another answer.".format(
@@ -682,7 +701,9 @@ def submit_challenge(request, challenge_slug: str):
         if challenge.answer_case_sensitive:
             answers_match = submitted_answer == expected_answer
         else:
-            answers_match = submitted_answer.casefold() == expected_answer.strip().casefold()
+            answers_match = (
+                submitted_answer.casefold() == expected_answer.strip().casefold()
+            )
 
         if not answers_match:
             messages.error(request, "Sorry, that answer is not correct. Try again!")
@@ -739,8 +760,9 @@ def move_challenge(request, challenge_slug: str, direction: str):
 
     category = challenge.category
     ordered = list(
-        Challenge.objects.filter(category=category)
-        .order_by("sort_order", "title", "pk")
+        Challenge.objects.filter(category=category).order_by(
+            "sort_order", "title", "pk"
+        )
     )
 
     try:
@@ -751,7 +773,9 @@ def move_challenge(request, challenge_slug: str, direction: str):
 
     if direction == "left":
         if index == 0:
-            messages.info(request, "This challenge is already at the start of the list.")
+            messages.info(
+                request, "This challenge is already at the start of the list."
+            )
             return redirect("core:challenge")
         ordered[index - 1], ordered[index] = ordered[index], ordered[index - 1]
     else:  # direction == "right"
@@ -766,3 +790,227 @@ def move_challenge(request, challenge_slug: str, direction: str):
                 Challenge.objects.filter(pk=item.pk).update(sort_order=position)
 
     return redirect("core:challenge")
+
+
+SESSION_ADMIN_VIEW_AS_CLASS = "admin_view_as_class"
+
+
+def analytics_view(request):
+    """Display analytics dashboard for admins."""
+    participant = _get_logged_in_participant(request)
+    if not participant:
+        return redirect("core:login")
+
+    if not participant.is_admin:
+        messages.error(request, "You do not have permission to access this page.")
+        return redirect("core:challenge")
+
+    team_years = settings.SCAV_HUNT_TEAM_YEARS
+
+    # Admin class view switching
+    admin_view_as_class = request.session.get(SESSION_ADMIN_VIEW_AS_CLASS)
+    if admin_view_as_class and admin_view_as_class not in team_years:
+        admin_view_as_class = None
+        request.session.pop(SESSION_ADMIN_VIEW_AS_CLASS, None)
+
+    # Submission logs - get all solves with related data
+    submission_logs = ChallengeSolve.objects.select_related(
+        "challenge", "challenge__category", "participant"
+    ).order_by("-created_at")[:100]
+
+    submission_data = []
+    for solve in submission_logs:
+        submission_data.append(
+            {
+                "id": solve.id,
+                "challenge_title": solve.challenge.title,
+                "challenge_slug": solve.challenge.slug,
+                "category_name": solve.challenge.category.name,
+                "participant_name": solve.participant.display_name
+                or solve.participant.ion_username,
+                "participant_username": solve.participant.ion_username,
+                "team_year": solve.team_year,
+                "awarded_points": solve.awarded_points,
+                "submitted_answer": solve.submitted_answer,
+                "created_at": solve.created_at.astimezone(settings.SCAV_HUNT_TZ),
+                "is_first_blood": ChallengeSolve.objects.filter(
+                    challenge=solve.challenge
+                )
+                .order_by("created_at")
+                .first()
+                .id
+                == solve.id,
+            }
+        )
+
+    # Class-by-class stats
+    class_stats = []
+    for year in team_years:
+        participants_in_class = Participant.objects.filter(graduation_year=year)
+        total_members = participants_in_class.count()
+
+        # Get solves by this class
+        class_solves = ChallengeSolve.objects.filter(team_year=year)
+        total_points = class_solves.aggregate(total=Sum("awarded_points"))["total"] or 0
+        total_solves = class_solves.count()
+
+        # Top contributors in this class (participants who submitted winning answers)
+        top_contributors = (
+            ChallengeSolve.objects.filter(team_year=year)
+            .values(
+                "participant__id",
+                "participant__display_name",
+                "participant__ion_username",
+            )
+            .annotate(
+                points_contributed=Sum("awarded_points"),
+                solves_count=Count("id"),
+            )
+            .order_by("-points_contributed")[:5]
+        )
+
+        contributors_list = []
+        for contrib in top_contributors:
+            contributors_list.append(
+                {
+                    "name": contrib["participant__display_name"]
+                    or contrib["participant__ion_username"],
+                    "username": contrib["participant__ion_username"],
+                    "points": contrib["points_contributed"],
+                    "solves": contrib["solves_count"],
+                }
+            )
+
+        # Recent activity for this class
+        recent_solves = class_solves.order_by("-created_at")[:5]
+        recent_activity = []
+        for solve in recent_solves:
+            recent_activity.append(
+                {
+                    "challenge": solve.challenge.title,
+                    "solver": solve.participant.display_name
+                    or solve.participant.ion_username,
+                    "points": solve.awarded_points,
+                    "time": solve.created_at.astimezone(settings.SCAV_HUNT_TZ),
+                }
+            )
+
+        class_stats.append(
+            {
+                "year": year,
+                "label": f"Class of {year}",
+                "total_members": total_members,
+                "total_points": total_points,
+                "total_solves": total_solves,
+                "top_contributors": contributors_list,
+                "recent_activity": recent_activity,
+            }
+        )
+
+    # Sort by points descending
+    class_stats.sort(key=lambda x: -x["total_points"])
+
+    # Challenge statistics
+    challenges = Challenge.objects.filter(is_active=True).select_related("category")
+    challenge_stats = []
+    for challenge in challenges:
+        solves = ChallengeSolve.objects.filter(challenge=challenge)
+        solve_count = solves.count()
+        first_blood = solves.order_by("created_at").first()
+
+        challenge_stats.append(
+            {
+                "id": challenge.id,
+                "title": challenge.title,
+                "category": challenge.category.name,
+                "type": challenge.get_challenge_type_display(),
+                "base_points": challenge.base_points,
+                "solve_count": solve_count,
+                "first_blood_team": f"Class of {first_blood.team_year}"
+                if first_blood
+                else None,
+                "first_blood_solver": (
+                    first_blood.participant.display_name
+                    or first_blood.participant.ion_username
+                )
+                if first_blood
+                else None,
+                "first_blood_time": first_blood.created_at.astimezone(
+                    settings.SCAV_HUNT_TZ
+                )
+                if first_blood
+                else None,
+            }
+        )
+
+    # Overall statistics
+    total_participants = Participant.objects.count()
+    total_submissions = ChallengeSolve.objects.count()
+    total_points_awarded = (
+        ChallengeSolve.objects.aggregate(total=Sum("awarded_points"))["total"] or 0
+    )
+    total_challenges = Challenge.objects.filter(is_active=True).count()
+    solved_challenges = (
+        Challenge.objects.filter(is_active=True, solves__isnull=False)
+        .distinct()
+        .count()
+    )
+
+    # Leaderboard
+    leaderboard = _build_leaderboard(participant.graduation_year)
+
+    context = {
+        "participant": participant,
+        "submission_logs": submission_data,
+        "class_stats": class_stats,
+        "challenge_stats": challenge_stats,
+        "leaderboard": leaderboard,
+        "team_years": team_years,
+        "admin_view_as_class": admin_view_as_class,
+        "overall_stats": {
+            "total_participants": total_participants,
+            "total_submissions": total_submissions,
+            "total_points_awarded": total_points_awarded,
+            "total_challenges": total_challenges,
+            "solved_challenges": solved_challenges,
+            "unsolved_challenges": total_challenges - solved_challenges,
+        },
+        "hunt_starts_at": _format_est(settings.SCAV_HUNT_START),
+        "hunt_ends_at": _format_est(settings.SCAV_HUNT_END),
+    }
+
+    return render(request, "core/analytics.html", context)
+
+
+@require_POST
+def switch_class_view(request):
+    """Allow admins to switch their view to a different class for troubleshooting."""
+    participant = _get_logged_in_participant(request)
+    if not participant:
+        return redirect("core:login")
+
+    if not participant.is_admin:
+        messages.error(request, "You do not have permission to perform this action.")
+        return redirect("core:challenge")
+
+    team_years = settings.SCAV_HUNT_TEAM_YEARS
+    selected_year = request.POST.get("class_year")
+
+    if selected_year == "reset":
+        request.session.pop(SESSION_ADMIN_VIEW_AS_CLASS, None)
+        messages.success(request, "View reset to your original class.")
+    else:
+        try:
+            year_int = int(selected_year)
+            if year_int in team_years:
+                request.session[SESSION_ADMIN_VIEW_AS_CLASS] = year_int
+                # Temporarily update the participant's graduation year for viewing
+                participant.graduation_year = year_int
+                participant.save(update_fields=["graduation_year"])
+                messages.success(request, f"Now viewing as Class of {year_int}.")
+            else:
+                messages.error(request, "Invalid class year selected.")
+        except (TypeError, ValueError):
+            messages.error(request, "Invalid class year selected.")
+
+    return redirect("core:analytics")
