@@ -55,8 +55,10 @@
         {% endif %}
     </div>
     <div class="page page--challenge">
+        {% if ENABLE_SNOW_OVERLAY %}
         <!-- TODO: Remove temporary snow effect overlay after the holiday event -->
         <div class="snow-overlay" aria-hidden="true"></div>
+        {% endif %}
         <header class="site-nav">
             <div class="site-nav__inner">
             <div class="site-nav__left">
@@ -315,6 +317,7 @@
             }
         }
 
+        {% if ENABLE_SNOW_OVERLAY %}
         const SNOWFLAKE_COUNT = 80;
         const snowOverlay = document.querySelector('.snow-overlay');
         if (snowOverlay) {
@@ -336,6 +339,7 @@
                 snowOverlay.appendChild(flake);
             }
         }
+        {% endif %}
 
         const savedTheme = localStorage.getItem(STORAGE_KEY);
         if (savedTheme) {

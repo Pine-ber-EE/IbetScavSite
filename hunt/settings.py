@@ -18,6 +18,7 @@ env = environ.Env(
     SCAV_HUNT_TEAM_YEARS=(list, []),
     SCAV_SUBMISSION_COOLDOWN_SECONDS=(int, 3),
     HUNT_YEAR=(str, "2025"),  # Changed to str to accept any string value
+    ENABLE_SNOW_OVERLAY=(bool, True),
 )
 
 # If a .env file exists, load it before reading any env vars so defaults
@@ -28,6 +29,7 @@ if env_file.exists():
 
 # Make HUNT_YEAR available as a module-level setting
 HUNT_YEAR = env("HUNT_YEAR")
+ENABLE_SNOW_OVERLAY = env("ENABLE_SNOW_OVERLAY")
 
 # Convert to int if it's a numeric string, otherwise keep as string
 try:
